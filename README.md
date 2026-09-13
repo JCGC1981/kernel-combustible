@@ -5,7 +5,7 @@ de la flota de **Kernel Energy S.A.S.**
 
 | Rol | Qué puede hacer |
 |---|---|
-| **Administrador** | Panel completo: saldo, recargas en COP, todos los tanqueos con foto del recibo, aprobar/rechazar, gráficas, exportar a Excel (CSV), gestionar vehículos y conductores. |
+| **Administrador** | Panel completo: saldo, recargas en COP, todos los tanqueos con foto del recibo, aprobar/rechazar, gráficas, exportar a Excel (CSV), gestionar vehículos y conductores. También puede registrar sus propios tanqueos con foto (botón **📷 Registrar tanqueo**); quedan aprobados de inmediato. |
 | **Conductor** | Únicamente: tomar la foto del recibo desde la app; **la app lee automáticamente los datos del recibo** (fecha, N° recibo, galones, $/galón, total, combustible, estación, placa, kilometraje), el conductor los verifica y envía. Ve el estado de sus propios envíos. No ve nada más. |
 
 ## 🔎 Lectura automática del recibo (OCR)

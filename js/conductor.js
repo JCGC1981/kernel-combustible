@@ -5,8 +5,13 @@
 
   const { session, perfil } = await requireAuth();
   const uid = session.user.id;
+  const esAdmin = perfil.rol === "admin";
+  const TEXTO_BOTON = esAdmin ? "Guardar tanqueo" : "Enviar al administrador";
   $("#userName").textContent = perfil.nombre;
-  if (perfil.rol === "admin") $("#linkAdmin").hidden = false;
+  if (esAdmin) {
+    $("#linkAdmin").hidden = false;
+    $("#btnEnviar").textContent = TEXTO_BOTON;
+  }
   $("#btnLogout").addEventListener("click", logout);
 
   let vehiculos = [];
@@ -152,7 +157,7 @@
     const fotoPath = `${uid}/${Date.now()}_${placa}.jpg`;
 
     const up = await sb.storage.from(cfg.BUCKET_RECIBOS).upload(fotoPath, fotoBlob, { contentType: "image/jpeg", upsert: false });
-    if (up.error) { toast("No se pudo subir la foto: " + mensajeError(up.error), "error"); btn.disabled = false; btn.textContent = "Enviar al administrador"; return; }
+    if (up.error) { toast("No se pudo subir la foto: " + mensajeError(up.error), "error"); btn.disabled = false; btn.textContent = TEXTO_BOTON; return; }
 
     const registro = {
       fecha_tanqueo: new Date($("#fecha").value).toISOString(),
@@ -167,7 +172,10 @@
       ciudad: $("#ciudad").value.trim() || null,
       observaciones: $("#observaciones").value.trim() || null,
       foto_path: fotoPath,
-      estado: "pendiente",
+      // el administrador no necesita aprobarse a sí mismo
+      estado: esAdmin ? "aprobado" : "pendiente",
+      revisado_por: esAdmin ? uid : null,
+      revisado_en: esAdmin ? new Date().toISOString() : null,
       // trazabilidad de la lectura automática
       origen: ocr.detectados.length ? "ocr" : "manual",
       texto_ocr: ocr.texto ? ocr.texto.slice(0, 4000) : null,
@@ -177,12 +185,12 @@
     if (ins.error) {
       await sb.storage.from(cfg.BUCKET_RECIBOS).remove([fotoPath]).catch(() => {});
       toast(mensajeError(ins.error), "error");
-      btn.disabled = false; btn.textContent = "Enviar al administrador";
+      btn.disabled = false; btn.textContent = TEXTO_BOTON;
       return;
     }
-    toast("✅ Tanqueo enviado al administrador", "success");
+    toast(esAdmin ? "✅ Tanqueo guardado" : "✅ Tanqueo enviado al administrador", "success");
     limpiarFormulario();
-    btn.disabled = false; btn.textContent = "Enviar al administrador";
+    btn.disabled = false; btn.textContent = TEXTO_BOTON;
     window.scrollTo({ top: 0, behavior: "smooth" });
     cargarMisTanqueos();
   });
