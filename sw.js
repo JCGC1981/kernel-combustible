@@ -1,9 +1,9 @@
 /* Service worker: permite instalar la app y abrirla aunque la red falle un momento.
    Estrategia: red primero, caché como respaldo (solo archivos del propio sitio). */
-const CACHE = "ke-combustible-v4";
+const CACHE = "ke-combustible-v5";
 const SHELL = [
   "./", "./index.html", "./admin.html", "./conductor.html",
-  "./css/styles.css", "./js/config.js", "./js/common.js", "./js/admin.js", "./js/conductor.js", "./js/ocr.js",
+  "./css/styles.css", "./js/config.js", "./js/common.js", "./js/admin.js", "./js/conductor.js", "./js/ocr.js", "./js/biometria.js",
   "./manifest.webmanifest", "./assets/icon-192.png", "./assets/icon-512.png", "./assets/logo-kernel.png", "./assets/isotipo.png",
 ];
 

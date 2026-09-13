@@ -8,6 +8,7 @@
   $("#userName").textContent = perfil.nombre;
   $("#btnLogout").addEventListener("click", logout);
   $("#btnRecargar").addEventListener("click", () => cargarTodo(true));
+  const btnHuella = $("#btnHuella"); btnHuella.hidden = false; KE.configurarBotonHuella(btnHuella, perfil);
 
   const S = { perfiles: [], vehiculos: [], recargas: [], tanqueos: [], charts: {} };
   const nombreDe = (id) => (S.perfiles.find((p) => p.id === id) || {}).nombre || "—";

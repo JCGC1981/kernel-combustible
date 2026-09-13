@@ -11,8 +11,14 @@
   if (esAdmin) {
     $("#linkAdmin").hidden = false;
     $("#btnEnviar").textContent = TEXTO_BOTON;
+    $("#fotoOrigenAdmin").hidden = false;
+    $("#campoConductor").hidden = false;
+    // lista de conductores para registrar a nombre de otro
+    const { data: perfiles } = await sb.from("perfiles").select("id, nombre, rol").eq("activo", true).order("nombre");
+    $("#conductor").innerHTML = (perfiles || []).map((p) => `<option value="${p.id}" ${p.id === uid ? "selected" : ""}>${escapeHtml(p.nombre)}${p.id === uid ? " (yo)" : ""}</option>`).join("");
   }
   $("#btnLogout").addEventListener("click", logout);
+  const btnHuella = $("#btnHuella"); btnHuella.hidden = false; KE.configurarBotonHuella(btnHuella, perfil);
 
   let vehiculos = [];
   let fotoBlob = null;
@@ -37,6 +43,8 @@
   function aplicarCombustiblePredeterminado() {
     const v = vehiculos.find((x) => x.placa === $("#placa").value);
     if (v && v.combustible_predeterminado) $("#tipo").value = v.combustible_predeterminado;
+    // admin: al elegir la placa, proponer el conductor asignado a ese vehículo
+    if (esAdmin && v && v.conductor_id && $("#conductor").querySelector(`option[value="${v.conductor_id}"]`)) $("#conductor").value = v.conductor_id;
   }
 
   $("#tipo").innerHTML = cfg.TIPOS_COMBUSTIBLE.map((t) => `<option>${t}</option>`).join("");
@@ -53,10 +61,14 @@
 
   // ---------- Foto ----------
   const inputFoto = $("#foto");
+  const inputArchivo = $("#fotoArchivo");
   $("#fotoBox").addEventListener("click", () => inputFoto.click());
   $("#btnRepetirFoto").addEventListener("click", () => inputFoto.click());
-  inputFoto.addEventListener("change", async () => {
-    const file = inputFoto.files[0];
+  $("#btnSubirArchivo").addEventListener("click", () => inputArchivo.click());
+  inputFoto.addEventListener("change", () => procesarFoto(inputFoto.files[0]));
+  inputArchivo.addEventListener("change", () => procesarFoto(inputArchivo.files[0]));
+
+  async function procesarFoto(file) {
     if (!file) return;
     try {
       fotoOriginal = file;
@@ -72,7 +84,7 @@
       fotoBlob = null; fotoOriginal = null;
       toast(e.message, "error");
     }
-  });
+  }
   $("#btnReleer").addEventListener("click", () => fotoOriginal && leerReciboAutomatico());
 
   // ---------- Lectura automática (OCR) ----------
@@ -136,7 +148,7 @@
 
   function limpiarFormulario() {
     fotoBlob = null; fotoOriginal = null; ocr = { texto: null, campos: null, detectados: [] };
-    inputFoto.value = "";
+    inputFoto.value = ""; inputArchivo.value = "";
     $("#fotoPreview").hidden = true; $("#fotoPreview").src = "";
     $("#fotoVacia").hidden = false; $("#fotoAcciones").hidden = true;
     $("#ocrResultado").hidden = true; $("#ocrProgreso").hidden = true;
@@ -163,7 +175,7 @@
       fecha_tanqueo: new Date($("#fecha").value).toISOString(),
       numero_recibo: $("#recibo").value.trim(),
       placa,
-      conductor_id: uid,
+      conductor_id: esAdmin && $("#conductor").value ? $("#conductor").value : uid,
       tipo_combustible: $("#tipo").value,
       galones: parseFloat($("#galones").value),
       valor_galon: parseFloat($("#valorGalon").value),

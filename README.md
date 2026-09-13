@@ -8,6 +8,21 @@ de la flota de **Kernel Energy S.A.S.**
 | **Administrador** | Panel completo: saldo, recargas en COP, todos los tanqueos con foto del recibo, aprobar/rechazar, gráficas, exportar a Excel (CSV), gestionar vehículos y conductores. También puede registrar sus propios tanqueos con foto (botón **📷 Registrar tanqueo**); quedan aprobados de inmediato. |
 | **Conductor** | Únicamente: tomar la foto del recibo desde la app; **la app lee automáticamente los datos del recibo** (fecha, N° recibo, galones, $/galón, total, combustible, estación, placa, kilometraje), el conductor los verifica y envía. Ve el estado de sus propios envíos. No ve nada más. |
 
+## 🔒 Ingreso con huella digital / Face ID
+
+La primera vez se entra con correo y contraseña; la app pregunta *"¿Usar tu huella para entrar?"*.
+Si se acepta, cada vez que se abra la app en ese dispositivo pedirá la huella (o el rostro) del
+propio celular en lugar de la contraseña. Siempre está la opción **Ingresar con contraseña**, y el
+botón **🔒 Huella** dentro de la app permite activarla o desactivarla. Se usa la tecnología
+WebAuthn del dispositivo (la misma de las apps bancarias); la huella nunca sale del celular.
+
+## 📁 Subir una foto recibida (solo administrador)
+
+En **📷 Registrar tanqueo**, el administrador tiene además el botón **Subir foto recibida** para
+cargar una imagen de la galería, de WhatsApp o un archivo, y el campo **Conductor que realizó el
+tanqueo** para registrarlo a nombre de quien corresponda. Al elegir la placa se propone
+automáticamente el conductor asignado a ese vehículo. La lectura automática funciona igual.
+
 ## 🔎 Lectura automática del recibo (OCR)
 
 Al tomar la foto, la app reconoce el texto **en el mismo celular** (Tesseract.js, gratuito, sin

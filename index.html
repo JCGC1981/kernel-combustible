@@ -14,6 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/common.js"></script>
+  <script src="js/biometria.js"></script>
 </head>
 <body>
   <main class="login-wrap">
@@ -53,6 +54,15 @@
         <button type="submit" class="btn primary block big">Guardar y entrar</button>
       </form>
 
+      <!-- Ofrecer huella digital tras el primer ingreso -->
+      <div id="panelHuella" hidden>
+        <div class="bio-icono">🔒</div>
+        <h2>¿Usar tu huella para entrar?</h2>
+        <p class="muted small">La próxima vez podrás abrir la app con la huella o el rostro de este dispositivo, sin escribir la contraseña.</p>
+        <button type="button" class="btn primary block big" id="btnActivarHuella">Sí, activar huella</button>
+        <button type="button" class="btn block mt" id="btnSinHuella">Ahora no</button>
+      </div>
+
       <p class="muted small mt" id="version">Kernel Energy S.A.S.</p>
     </div>
   </main>
@@ -74,18 +84,36 @@
         msg.textContent = texto; msg.className = `alert ${tipo}`; msg.hidden = !texto;
       }
 
+      let perfilActual = null;
       async function redirigirPorRol() {
-        const perfil = await getPerfil();
+        const perfil = perfilActual || (await getPerfil());
         location.replace(perfil && perfil.rol === "admin" ? "admin.html" : "conductor.html");
       }
+
+      // Tras ingresar con contraseña: ofrecer la huella si el dispositivo la soporta y aún no está activa
+      async function ofrecerHuella() {
+        perfilActual = await getPerfil();
+        KE_BIO.marcarDesbloqueado();
+        const ofrecer = window.KE_BIO && (await KE_BIO.disponible()) && !KE_BIO.activo(perfilActual.id) && !KE_BIO.rechazado();
+        if (!ofrecer) { await redirigirPorRol(); return; }
+        formLogin.hidden = true; formClave.hidden = true; $("#panelHuella").hidden = false;
+      }
+      $("#btnActivarHuella").addEventListener("click", async () => {
+        try { await KE_BIO.registrar(perfilActual); toast("Huella activada", "success"); }
+        catch (e) { mostrar("No se pudo activar la huella (" + e.message + "). Podrás intentarlo luego desde el botón 🔓 dentro de la app.", "warn"); }
+        await redirigirPorRol();
+      });
+      $("#btnSinHuella").addEventListener("click", async () => { KE_BIO.marcarRechazo(); await redirigirPorRol(); });
 
       sb.auth.onAuthStateChange(async (evento, session) => {
         if (evento === "PASSWORD_RECOVERY") esperandoClave = true;
         if (!session) return;
         if (esperandoClave) {
           formLogin.hidden = true; formClave.hidden = false;
-        } else if (evento === "INITIAL_SESSION" || evento === "SIGNED_IN") {
-          await redirigirPorRol();
+        } else if (evento === "SIGNED_IN") {
+          await ofrecerHuella();
+        } else if (evento === "INITIAL_SESSION") {
+          await redirigirPorRol();   // ya tenía sesión: la huella (si está activa) se pide en la página destino
         }
       });
 
@@ -115,7 +143,7 @@
         toast("Contraseña guardada", "success");
         esperandoClave = false;
         history.replaceState(null, "", location.pathname);
-        await redirigirPorRol();
+        await ofrecerHuella();
       });
     })();
   </script>

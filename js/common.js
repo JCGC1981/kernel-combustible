@@ -84,12 +84,34 @@ window.KE = (function () {
       return new Promise(() => {});
     }
     if (rol === "admin" && perfil.rol !== "admin") { location.replace("conductor.html"); return new Promise(() => {}); }
+    // Bloqueo con huella (si el usuario la activó en este dispositivo)
+    if (window.KE_BIO && KE_BIO.activo(session.user.id) && !KE_BIO.yaDesbloqueado()) {
+      await KE_BIO.bloquear(perfil, async () => { await sb.auth.signOut(); location.replace("index.html"); });
+    }
     return { session, perfil };
   }
 
   async function logout() {
+    sessionStorage.removeItem("ke_desbloqueado");
     await sb.auth.signOut();
     location.replace("index.html");
+  }
+
+  /** Botón 🔒 para activar/desactivar la huella en este dispositivo. */
+  async function configurarBotonHuella(boton, perfil) {
+    if (!boton || !window.KE_BIO) return;
+    if (!(await KE_BIO.disponible())) { boton.hidden = true; return; }
+    const pintar = () => { const on = KE_BIO.activo(perfil.id); boton.textContent = on ? "🔒 Huella" : "🔓 Huella"; boton.title = on ? "Desactivar el ingreso con huella en este dispositivo" : "Usar tu huella para entrar en este dispositivo"; };
+    pintar();
+    boton.addEventListener("click", async () => {
+      if (KE_BIO.activo(perfil.id)) {
+        if (confirm("¿Desactivar el ingreso con huella en este dispositivo?")) { KE_BIO.desactivar(); toast("Huella desactivada"); }
+      } else {
+        try { await KE_BIO.registrar(perfil); toast("Huella activada para este dispositivo", "success"); }
+        catch (e) { toast("No se pudo activar la huella: " + e.message, "error"); }
+      }
+      pintar();
+    });
   }
 
   /** Redimensiona y comprime una imagen a JPEG (máx. lado `maxLado`). */
@@ -144,5 +166,5 @@ window.KE = (function () {
   }
 
   return { $, $$, cfg, TZ, fmtCOP, fmtNum, fmtFecha, fmtFechaHora, mesDe, diaDe, hoyISO, nombreMes, aDatetimeLocal,
-           escapeHtml, toast, getPerfil, requireAuth, logout, comprimirImagen, urlFoto, descargarCSV, mensajeError };
+           escapeHtml, toast, getPerfil, requireAuth, logout, configurarBotonHuella, comprimirImagen, urlFoto, descargarCSV, mensajeError };
 })();
