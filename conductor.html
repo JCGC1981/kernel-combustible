@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Registrar tanqueo · Kernel Energy</title>
+  <meta name="theme-color" content="#0b3d91">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/ocr.js"></script>
+</head>
+<body class="conductor">
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/icon-192.png" alt="">
+      <div><strong>Kernel Energy</strong><span>Registro de tanqueo</span></div>
+    </div>
+    <div class="grow"></div>
+    <div class="userbox">
+      <span id="userName"></span>
+      <a id="linkAdmin" class="btn sm" href="admin.html" hidden>Panel</a>
+      <button class="btn sm" id="btnLogout">Salir</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="card">
+      <h2>Nuevo tanqueo</h2>
+      <p class="muted small">Toma la foto del recibo: la app <strong>lee los datos automáticamente</strong>. Revisa que estén correctos y envía.</p>
+
+      <form id="formTanqueo" autocomplete="off">
+        <!-- Foto -->
+        <div class="field">
+          <label>Foto del recibo *</label>
+          <input type="file" id="foto" accept="image/*" capture="environment" hidden>
+          <div class="foto-capture" id="fotoBox">
+            <div id="fotoVacia">
+              <div class="icon">📷</div>
+              <strong>Tomar foto del recibo</strong>
+              <div class="muted small">Se abrirá la cámara del celular</div>
+            </div>
+            <img id="fotoPreview" alt="Vista previa del recibo" hidden>
+          </div>
+          <div class="row mt" id="fotoAcciones" hidden>
+            <button type="button" class="btn sm" id="btnRepetirFoto">Tomar otra foto</button>
+            <button type="button" class="btn sm" id="btnReleer">Leer de nuevo</button>
+            <span class="muted small" id="fotoInfo"></span>
+          </div>
+          <!-- Progreso de la lectura automática -->
+          <div id="ocrProgreso" class="ocr-progreso" hidden>
+            <div class="row between"><span id="ocrMsg">Leyendo recibo…</span><span id="ocrPct">0%</span></div>
+            <div class="barra"><div id="ocrBarra"></div></div>
+          </div>
+          <div id="ocrResultado" class="alert" hidden></div>
+        </div>
+
+        <div class="grid grid-2 stack-sm">
+          <div class="field">
+            <label for="placa">Vehículo (placa) *</label>
+            <select id="placa" required></select>
+          </div>
+          <div class="field">
+            <label for="fecha">Fecha y hora del tanqueo *</label>
+            <input type="datetime-local" id="fecha" required>
+          </div>
+        </div>
+
+        <div class="grid grid-2 stack-sm">
+          <div class="field">
+            <label for="recibo">Número de recibo / factura *</label>
+            <input type="text" id="recibo" required placeholder="Ej: 45872" maxlength="40">
+          </div>
+          <div class="field">
+            <label for="tipo">Tipo de combustible *</label>
+            <select id="tipo" required></select>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="field">
+            <label for="galones">Galones *</label>
+            <input type="number" id="galones" required min="0.001" step="0.001" inputmode="decimal" placeholder="Ej: 12.350">
+          </div>
+          <div class="field">
+            <label for="valorGalon">Valor por galón (COP) *</label>
+            <input type="number" id="valorGalon" required min="1" step="1" inputmode="numeric" placeholder="Ej: 10250">
+          </div>
+        </div>
+
+        <div class="total-box mb">
+          <span>Valor total del tanqueo</span>
+          <span id="total">$ 0</span>
+        </div>
+
+        <div class="grid grid-2 stack-sm">
+          <div class="field">
+            <label for="kilometraje">Kilometraje del vehículo</label>
+            <input type="number" id="kilometraje" min="0" step="1" inputmode="numeric" placeholder="Ej: 45210">
+          </div>
+          <div class="field">
+            <label for="estacion">Estación de servicio</label>
+            <input type="text" id="estacion" placeholder="Ej: Terpel La 80" maxlength="80">
+          </div>
+        </div>
+        <div class="grid grid-2 stack-sm">
+          <div class="field">
+            <label for="ciudad">Ciudad</label>
+            <input type="text" id="ciudad" placeholder="Ej: Bogotá" maxlength="60">
+          </div>
+          <div class="field">
+            <label for="observaciones">Observaciones</label>
+            <input type="text" id="observaciones" placeholder="Opcional" maxlength="200">
+          </div>
+        </div>
+
+        <button type="submit" class="btn primary block big" id="btnEnviar">Enviar al administrador</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><h2>Mis últimos tanqueos</h2><button class="btn sm" id="btnRefrescar">Actualizar</button></div>
+      <div class="lista-tanqueos" id="lista"><p class="muted">Cargando…</p></div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+  <script src="js/conductor.js"></script>
+</body>
+</html>
