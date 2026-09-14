@@ -55,6 +55,12 @@ window.KE = (function () {
   const escapeHtml = (s) =>
     String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  // Conductores: ingresan con cédula → cuenta técnica cedula@dominio
+  const DOMINIO_CONDUCTORES = cfg.DOMINIO_CONDUCTORES || "conductores.kernelenergy.com";
+  const esCedula = (v) => /^\d{5,15}$/.test(String(v || "").trim());
+  const aCorreoUsuario = (v) => { const s = String(v || "").trim(); return esCedula(s) ? `${s}@${DOMINIO_CONDUCTORES}` : s.toLowerCase(); };
+  const esCorreoConductor = (email) => new RegExp(`^\\d{5,15}@${DOMINIO_CONDUCTORES.replace(/\./g, "\\.")}$`).test(email || "");
+
   let toastTimer;
   function toast(msg, tipo = "") {
     let el = $("#toast");
@@ -155,7 +161,12 @@ window.KE = (function () {
     const m = (error && error.message) || String(error);
     if (/duplicate key|tanqueos_recibo_placa_uidx/i.test(m)) return "Ya existe un tanqueo con ese número de recibo para esa placa.";
     if (/row-level security/i.test(m)) return "No tienes permiso para realizar esta acción.";
-    if (/Invalid login credentials/i.test(m)) return "Correo o contraseña incorrectos.";
+    if (/Invalid login credentials/i.test(m)) return "Cédula/correo o contraseña incorrectos.";
+    if (/no autorizado por el administrador/i.test(m)) return "Ese conductor no está autorizado. Regístralo primero desde el panel.";
+    if (/User already registered|already been registered/i.test(m)) return "Ya existe una cuenta con esa cédula.";
+    if (/Password should be at least|at least 6 characters/i.test(m)) return "La contraseña debe tener al menos 6 caracteres.";
+    if (/Signups not allowed|signup is disabled/i.test(m)) return "Supabase tiene desactivado el registro de usuarios: actívalo en Authentication → Providers → Email.";
+    if (/Database error saving new user/i.test(m)) return "La base de datos rechazó la creación (¿ejecutaste actualizacion-conductores.sql?).";
     if (/Email not confirmed/i.test(m)) return "El correo no ha sido confirmado.";
     if (/Failed to fetch|NetworkError/i.test(m)) return "Sin conexión. Verifica tu internet e intenta de nuevo.";
     return m;
@@ -167,5 +178,6 @@ window.KE = (function () {
   }
 
   return { $, $$, cfg, TZ, fmtCOP, fmtNum, fmtFecha, fmtFechaHora, mesDe, diaDe, hoyISO, nombreMes, aDatetimeLocal,
-           escapeHtml, toast, getPerfil, requireAuth, logout, configurarBotonHuella, comprimirImagen, urlFoto, descargarCSV, mensajeError };
+           escapeHtml, toast, getPerfil, requireAuth, logout, configurarBotonHuella, comprimirImagen, urlFoto, descargarCSV, mensajeError,
+           DOMINIO_CONDUCTORES, esCedula, aCorreoUsuario, esCorreoConductor };
 })();

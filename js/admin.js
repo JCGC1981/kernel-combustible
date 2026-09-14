@@ -30,6 +30,7 @@
     if (err) { toast(mensajeError(err.error), "error"); return; }
     S.perfiles = p.data; S.vehiculos = v.data; S.recargas = r.data; S.tanqueos = t.data;
     renderTodo();
+    $("#ultimaActualizacion").textContent = "Datos al " + fmtFechaHora(new Date().toISOString()) + " · se actualiza automáticamente";
     if (aviso) toast("Datos actualizados", "success");
   }
 
@@ -183,7 +184,148 @@
     if (tr) abrirTanqueo(tr.dataset.id);
   });
 
-  $("#btnExportar").addEventListener("click", () => {
+  // ============================================================
+  //  EXPORTAR A EXCEL (.xlsx) — se genera al instante con los datos actuales
+  // ============================================================
+  const FMT_COP = '"$"#,##0';
+  const FMT_FECHA_HORA = "dd/mm/yyyy hh:mm";
+  const FMT_FECHA = "dd/mm/yyyy";
+  // Fechas como número de serie de Excel calculado en hora de Colombia (evita corrimientos de zona horaria)
+  const DIAS_1970 = 25569; // serie Excel del 1/1/1970
+  function fechaExcel(iso) {
+    if (!iso) return null;
+    const partes = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: KE.TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+      .formatToParts(new Date(iso)).filter((x) => x.type !== "literal").map((x) => [x.type, Number(x.value)]));
+    const dias = Date.UTC(partes.year, partes.month - 1, partes.day) / 86400000 + DIAS_1970;
+    return dias + ((partes.hour % 24) * 3600 + partes.minute * 60 + partes.second) / 86400;
+  }
+  function fechaSolo(ymd) {
+    if (!ymd) return null;
+    const [y, m, d] = ymd.split("-").map(Number);
+    return Date.UTC(y, m - 1, d) / 86400000 + DIAS_1970;
+  }
+
+  /** Aplica formato numérico/fecha por columna (por nombre de encabezado) y ancho. */
+  function estilizarHoja(ws, formatos = {}, anchos = []) {
+    const rango = XLSX.utils.decode_range(ws["!ref"]);
+    const encabezados = {};
+    for (let c = rango.s.c; c <= rango.e.c; c++) { const cel = ws[XLSX.utils.encode_cell({ r: rango.s.r, c })]; if (cel) encabezados[c] = String(cel.v); }
+    for (let c = rango.s.c; c <= rango.e.c; c++) {
+      const z = formatos[encabezados[c]]; if (!z) continue;
+      for (let r = rango.s.r + 1; r <= rango.e.r; r++) { const cel = ws[XLSX.utils.encode_cell({ r, c })]; if (cel && (cel.t === "n" || cel.t === "d")) cel.z = z; }
+    }
+    ws["!cols"] = anchos.map((w) => ({ wch: w }));
+    ws["!autofilter"] = { ref: ws["!ref"] };
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+  }
+
+  function hojaTanqueos(lista) {
+    const filas = lista.map((t) => ({
+      "Fecha tanqueo": fechaExcel(t.fecha_tanqueo), "N° recibo": t.numero_recibo, "Placa": t.placa, "Vehículo": vehiculoDe(t.placa).marca_modelo || "",
+      "Conductor": nombreDe(t.conductor_id), "Combustible": t.tipo_combustible, "Galones": Number(t.galones), "Valor galón": Number(t.valor_galon),
+      "Valor total": Number(t.valor_total), "Kilometraje": t.kilometraje ?? null, "Estación": t.estacion || "", "Ciudad": t.ciudad || "", "Estado": t.estado,
+      "Motivo rechazo": t.motivo_rechazo || "", "Observaciones": t.observaciones || "", "Origen datos": t.origen === "ocr" ? "Lectura automática" : "Manual",
+      "Revisado por": t.revisado_por ? nombreDe(t.revisado_por) : "", "Fecha revisión": fechaExcel(t.revisado_en), "Registrado en": fechaExcel(t.creado_en), "Foto": t.foto_path ? "Sí" : "No",
+    }));
+    const ws = XLSX.utils.json_to_sheet(filas.length ? filas : [{ "Fecha tanqueo": "", "N° recibo": "", "Placa": "", "Vehículo": "", "Conductor": "", "Combustible": "", "Galones": "", "Valor galón": "", "Valor total": "" }]);
+    if (filas.length) {
+      const n = filas.length + 1; // última fila de datos
+      XLSX.utils.sheet_add_aoa(ws, [["TOTAL", "", "", "", "", "", { f: `SUBTOTAL(9,G2:G${n})` }, "", { f: `SUBTOTAL(9,I2:I${n})` }]], { origin: n });
+      ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: n, c: 19 } });
+    }
+    estilizarHoja(ws, { "Fecha tanqueo": FMT_FECHA_HORA, "Valor galón": FMT_COP, "Valor total": FMT_COP, "Galones": "0.000", "Kilometraje": "#,##0", "Fecha revisión": FMT_FECHA_HORA, "Registrado en": FMT_FECHA_HORA },
+      [17, 14, 9, 24, 24, 15, 10, 13, 14, 12, 22, 14, 11, 22, 26, 18, 20, 17, 17, 6]);
+    if (filas.length) { const n = filas.length + 1; ["G", "I"].forEach((col) => { const c = ws[`${col}${n + 1}`]; if (c) c.z = col === "G" ? "0.000" : FMT_COP; }); ws["!autofilter"] = { ref: `A1:T${n}` }; }
+    return ws;
+  }
+
+  function hojaResumen() {
+    const hoy = hoyISO(), mesActual = hoy.slice(0, 7), anio = hoy.slice(0, 4);
+    const validos = S.tanqueos.filter(cuentaGasto);
+    const totalRecargas = S.recargas.reduce((a, r) => a + Number(r.valor), 0);
+    const gastoTotal = validos.reduce((a, t) => a + Number(t.valor_total), 0);
+    const delMes = validos.filter((t) => mesDe(t.fecha_tanqueo) === mesActual);
+    const pendientes = S.tanqueos.filter((t) => t.estado === "pendiente");
+    const filas = [
+      ["Kernel Energy S.A.S. · Control de combustible"],
+      ["Generado", fechaExcel(new Date().toISOString())],
+      [],
+      ["Indicador", "Valor"],
+      ["Saldo disponible (recargas − tanqueos)", totalRecargas - gastoTotal],
+      ["Total recargado", totalRecargas],
+      ["Gasto acumulado (aprobados + pendientes)", gastoTotal],
+      ["Gasto del mes actual", delMes.reduce((a, t) => a + Number(t.valor_total), 0)],
+      ["Galones del mes actual", delMes.reduce((a, t) => a + Number(t.galones), 0)],
+      ["Tanqueos pendientes por revisar", pendientes.length],
+      ["Valor pendiente por revisar", pendientes.reduce((a, t) => a + Number(t.valor_total), 0)],
+      [],
+      [`Consumo por vehículo (${anio})`],
+      ["Placa", "Vehículo", "Conductor", "Tanqueos", "Galones", "Gasto", "$/galón promedio", "Km recorridos*"],
+    ];
+    const porVeh = {};
+    validos.filter((t) => mesDe(t.fecha_tanqueo).startsWith(anio)).forEach((t) => { const s = (porVeh[t.placa] = porVeh[t.placa] || { gasto: 0, gal: 0, n: 0, km: [] }); s.gasto += Number(t.valor_total); s.gal += Number(t.galones); s.n++; if (t.kilometraje) s.km.push(t.kilometraje); });
+    S.vehiculos.forEach((v) => { const s = porVeh[v.placa]; if (!s) return; filas.push([v.placa, v.marca_modelo, nombreDe(v.conductor_id), s.n, s.gal, s.gasto, s.gal ? s.gasto / s.gal : 0, s.km.length > 1 ? Math.max(...s.km) - Math.min(...s.km) : null]); });
+    filas.push(["* Diferencia entre el mayor y menor kilometraje registrado en el año"]);
+    filas.push([]);
+    filas.push(["Gasto mensual"]);
+    filas.push(["Mes", "Tanqueos", "Galones", "Gasto"]);
+    const porMes = {};
+    validos.forEach((t) => { const m = mesDe(t.fecha_tanqueo); const s = (porMes[m] = porMes[m] || { n: 0, gal: 0, gasto: 0 }); s.n++; s.gal += Number(t.galones); s.gasto += Number(t.valor_total); });
+    Object.keys(porMes).sort().forEach((m) => filas.push([m, porMes[m].n, porMes[m].gal, porMes[m].gasto]));
+
+    const ws = XLSX.utils.aoa_to_sheet(filas);
+    ws["!cols"] = [{ wch: 42 }, { wch: 26 }, { wch: 24 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
+    ws["B2"].z = FMT_FECHA_HORA;
+    ["B5", "B6", "B7", "B8", "B11"].forEach((c) => { if (ws[c]) ws[c].z = FMT_COP; });
+    if (ws["B9"]) ws["B9"].z = "0.00";
+    // formatos de la tabla por vehículo y mensual
+    for (let r = 14; r < filas.length; r++) {
+      const e = ws[`E${r + 1}`], f = ws[`F${r + 1}`], g = ws[`G${r + 1}`], h = ws[`H${r + 1}`], c = ws[`C${r + 1}`], d = ws[`D${r + 1}`];
+      if (e && e.t === "n") e.z = "0.00"; if (f && f.t === "n") f.z = FMT_COP; if (g && g.t === "n") g.z = FMT_COP; if (h && h.t === "n") h.z = "#,##0";
+      // tabla mensual: C = galones, D = gasto
+      if (c && c.t === "n" && !(f && f.t === "n")) c.z = "0.00"; if (d && d.t === "n" && !(f && f.t === "n")) d.z = FMT_COP;
+    }
+    return ws;
+  }
+
+  function hojaRecargas() {
+    const ws = XLSX.utils.json_to_sheet(S.recargas.map((r) => ({ "Fecha": fechaSolo(r.fecha), "Valor": Number(r.valor), "Medio": r.medio || "", "Referencia": r.referencia || "", "Descripción": r.descripcion || "", "Registrado por": nombreDe(r.creado_por), "Registrado en": fechaExcel(r.creado_en) })));
+    if (S.recargas.length) { const n = S.recargas.length + 1; XLSX.utils.sheet_add_aoa(ws, [["TOTAL", { f: `SUM(B2:B${n})` }]], { origin: n }); const c = ws[`B${n + 1}`]; if (c) c.z = FMT_COP; }
+    estilizarHoja(ws, { "Fecha": FMT_FECHA, "Valor": FMT_COP, "Registrado en": FMT_FECHA_HORA }, [12, 14, 24, 18, 36, 22, 17]);
+    return ws;
+  }
+  function hojaVehiculos() {
+    const ws = XLSX.utils.json_to_sheet(S.vehiculos.map((v) => ({ "Placa": v.placa, "Tipo": v.tipo, "Marca / modelo": v.marca_modelo, "Año": v.anio, "Color": v.color || "", "Combustible habitual": v.combustible_predeterminado || "", "Conductor asignado": v.conductor_id ? nombreDe(v.conductor_id) : "", "Estado": v.activo ? "Activo" : "Inactivo" })));
+    estilizarHoja(ws, {}, [9, 12, 26, 6, 10, 20, 26, 10]);
+    return ws;
+  }
+  function hojaConductores() {
+    const ws = XLSX.utils.json_to_sheet(S.perfiles.map((p) => ({ "Nombre": p.nombre, "Correo": p.email || "", "Teléfono": p.telefono || "", "Rol": p.rol, "Vehículos asignados": S.vehiculos.filter((v) => v.conductor_id === p.id).map((v) => v.placa).join(", "), "Estado": p.activo ? "Activo" : "Inactivo", "Creado": fechaExcel(p.creado_en) })));
+    estilizarHoja(ws, { "Creado": FMT_FECHA }, [26, 30, 14, 10, 24, 10, 12]);
+    return ws;
+  }
+
+  function exportarExcel(soloFiltrados) {
+    if (!window.XLSX) { toast("No se pudo cargar el generador de Excel. Verifica tu conexión.", "error"); return; }
+    const wb = XLSX.utils.book_new();
+    wb.Props = { Title: "Kernel Energy · Control de combustible", Author: perfil.nombre, CreatedDate: new Date() };
+    if (soloFiltrados) {
+      XLSX.utils.book_append_sheet(wb, hojaTanqueos(tanqueosFiltrados()), "Tanqueos");
+      XLSX.writeFile(wb, `Tanqueos_Kernel_Energy_${hoyISO()}.xlsx`);
+    } else {
+      XLSX.utils.book_append_sheet(wb, hojaResumen(), "Resumen");
+      XLSX.utils.book_append_sheet(wb, hojaTanqueos(S.tanqueos), "Tanqueos");
+      XLSX.utils.book_append_sheet(wb, hojaRecargas(), "Recargas");
+      XLSX.utils.book_append_sheet(wb, hojaVehiculos(), "Vehículos");
+      XLSX.utils.book_append_sheet(wb, hojaConductores(), "Conductores");
+      XLSX.writeFile(wb, `Kernel_Energy_Combustible_${hoyISO()}.xlsx`);
+    }
+    toast("Excel generado con los datos actuales", "success");
+  }
+  $("#btnExcelTodo").addEventListener("click", () => exportarExcel(false));
+  $("#btnExportar").addEventListener("click", () => exportarExcel(true));
+
+  $("#btnExportarCSV").addEventListener("click", () => {
     const filas = [["Fecha tanqueo", "Número recibo", "Placa", "Vehículo", "Conductor", "Tipo combustible", "Galones", "Valor galón", "Valor total", "Kilometraje", "Estación", "Ciudad", "Estado", "Motivo rechazo", "Observaciones", "Origen datos", "Revisado por", "Fecha revisión", "Registrado en"]];
     tanqueosFiltrados().forEach((t) => filas.push([fmtFechaHora(t.fecha_tanqueo), t.numero_recibo, t.placa, vehiculoDe(t.placa).marca_modelo, nombreDe(t.conductor_id), t.tipo_combustible,
       String(t.galones).replace(".", ","), Math.round(t.valor_galon), Math.round(t.valor_total), t.kilometraje ?? "", t.estacion ?? "", t.ciudad ?? "", t.estado, t.motivo_rechazo ?? "", t.observaciones ?? "",
@@ -424,9 +566,12 @@
   //  CONDUCTORES / USUARIOS
   // ============================================================
   function renderConductores() {
-    $("#tablaConductores").innerHTML = `<thead><tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Rol</th><th>Vehículos asignados</th><th>Estado</th><th>Creado</th></tr></thead><tbody>` +
+    const sel = $("#cVehiculo"); const v0 = sel.value;
+    sel.innerHTML = `<option value="">Sin asignar</option>` + S.vehiculos.filter((v) => v.activo).map((v) => `<option value="${v.placa}">${v.placa} · ${escapeHtml(v.marca_modelo)}${v.conductor_id ? " (actual: " + escapeHtml(nombreDe(v.conductor_id)) + ")" : ""}</option>`).join("");
+    sel.value = v0;
+    $("#tablaConductores").innerHTML = `<thead><tr><th>Nombre</th><th>Cédula</th><th>Correo</th><th>Teléfono</th><th>Rol</th><th>Vehículos asignados</th><th>Estado</th><th>Creado</th></tr></thead><tbody>` +
       S.perfiles.map((p) => `<tr class="clickable" data-uid="${p.id}">
-        <td><strong>${escapeHtml(p.nombre)}</strong></td><td>${escapeHtml(p.email || "")}</td><td>${escapeHtml(p.telefono || "")}</td>
+        <td><strong>${escapeHtml(p.nombre)}</strong></td><td>${escapeHtml(p.cedula || "")}</td><td>${KE.esCorreoConductor(p.email) ? '<span class="muted">(ingresa con cédula)</span>' : escapeHtml(p.email || "")}</td><td>${escapeHtml(p.telefono || "")}</td>
         <td><span class="badge ${p.rol}">${p.rol}</span></td>
         <td>${S.vehiculos.filter((v) => v.conductor_id === p.id).map((v) => v.placa).join(", ") || '<span class="muted">—</span>'}</td>
         <td>${p.activo ? '<span class="badge aprobado">activo</span>' : '<span class="badge inactivo">inactivo</span>'}</td>
@@ -448,10 +593,23 @@
           <div class="field"><label>Estado</label><select name="activo" ${esYo ? "disabled" : ""}>${opciones([{ value: "true", label: "Activo" }, { value: "false", label: "Inactivo (no puede ingresar)" }], String(p.activo))}</select></div>
         </div>
         ${esYo ? `<p class="muted small">No puedes cambiar tu propio rol ni desactivarte.</p>` : ""}
-        <p class="muted small">Para cambiar la contraseña o eliminar el usuario: Supabase → Authentication → Users.</p>
-        <div class="actions"><button type="submit" class="btn primary">Guardar</button><button type="button" class="btn" data-cerrar>Cancelar</button></div>
+        ${p.cedula ? `<p class="muted small">Ingresa con la cédula <strong>${escapeHtml(p.cedula)}</strong>. Si olvidó la contraseña, asígnale una nueva con el botón 🔑.</p>` : `<p class="muted small">Para cambiar la contraseña de un usuario con correo: Supabase → Authentication → Users.</p>`}
+        <div class="actions">
+          <button type="submit" class="btn primary">Guardar</button>
+          ${!esYo ? `<button type="button" class="btn" data-accion="clave">🔑 Nueva contraseña</button>` : ""}
+          <button type="button" class="btn" data-cerrar>Cancelar</button>
+        </div>
       </form>`);
     const form = modal.querySelector("#formCond");
+    form.addEventListener("click", async (e) => {
+      if (!e.target.closest("[data-accion=clave]")) return;
+      const clave = prompt(`Nueva contraseña para ${p.nombre} (mínimo 6 caracteres):`);
+      if (clave === null) return;
+      if (clave.trim().length < 6) { toast("La contraseña debe tener al menos 6 caracteres", "error"); return; }
+      const { error } = await sb.rpc("admin_restablecer_clave", { p_uid: uid, p_clave: clave.trim() });
+      if (error) { toast(mensajeError(error), "error"); return; }
+      toast(`Contraseña actualizada para ${p.nombre}`, "success");
+    });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const cambios = { nombre: form.nombre.value.trim(), telefono: form.telefono.value.trim() || null };
@@ -461,6 +619,71 @@
       toast("Usuario actualizado", "success"); cerrarModal(); await cargarTodo();
     });
   }
+
+  // ============================================================
+  //  CREAR CONDUCTOR desde la app (cuenta técnica cedula@dominio)
+  //  Se usa un segundo cliente de Supabase sin sesión persistente para que
+  //  el registro del conductor no reemplace la sesión del administrador.
+  // ============================================================
+  const sbRegistro = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  function mostrarMsgConductor(texto, tipo) { const el = $("#msgConductor"); el.innerHTML = texto; el.className = `alert ${tipo}`; el.hidden = !texto; }
+
+  $("#formConductor").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const nombre = $("#cNombre").value.trim(), cedula = $("#cCedula").value.trim(), telefono = $("#cTelefono").value.trim() || null;
+    const clave = $("#cClave").value, placa = $("#cVehiculo").value;
+    if (!KE.esCedula(cedula)) { mostrarMsgConductor("La cédula debe tener solo números (5 a 15 dígitos).", "error"); return; }
+    if (clave.length < 6) { mostrarMsgConductor("La contraseña debe tener al menos 6 caracteres.", "error"); return; }
+    if (S.perfiles.some((p) => p.cedula === cedula)) { mostrarMsgConductor("Ya existe un conductor con esa cédula.", "error"); return; }
+    const btn = $("#btnCrearConductor"); btn.disabled = true; btn.textContent = "Creando…"; mostrarMsgConductor("");
+
+    // 1) autorizar la cédula (solo el admin puede)
+    const aut = await sb.from("conductores_autorizados").upsert({ cedula, nombre, telefono, creado_por: perfil.id }, { onConflict: "cedula" });
+    if (aut.error) { mostrarMsgConductor(mensajeError(aut.error), "error"); btn.disabled = false; btn.textContent = "+ Crear conductor"; return; }
+
+    // 2) crear la cuenta técnica
+    const email = KE.aCorreoUsuario(cedula);
+    const reg = await sbRegistro.auth.signUp({ email, password: clave, options: { data: { nombre, cedula } } });
+    if (reg.error) {
+      mostrarMsgConductor(mensajeError(reg.error), "error");
+      btn.disabled = false; btn.textContent = "+ Crear conductor"; return;
+    }
+    if (reg.data && reg.data.user && !reg.data.session && reg.data.user.identities && reg.data.user.identities.length === 0) {
+      mostrarMsgConductor("Ya existe una cuenta con esa cédula.", "error"); btn.disabled = false; btn.textContent = "+ Crear conductor"; return;
+    }
+    // 3) asignar vehículo (opcional)
+    let avisoVeh = "";
+    if (placa && reg.data.user) {
+      const up = await sb.from("vehiculos").update({ conductor_id: reg.data.user.id }).eq("placa", placa);
+      avisoVeh = up.error ? `<br>No se pudo asignar el vehículo: ${escapeHtml(mensajeError(up.error))}` : `<br>Vehículo asignado: <strong>${placa}</strong>.`;
+    }
+    mostrarMsgConductor(`✅ Conductor <strong>${escapeHtml(nombre)}</strong> creado. Ingresa a la app con la cédula <strong>${cedula}</strong> y la contraseña <strong>${escapeHtml(clave)}</strong>.${avisoVeh}` +
+      `<br><button type="button" class="btn sm mt" data-msg-conductor="${escapeHtml(nombre)}|${cedula}|${escapeHtml(clave)}">📲 Copiar mensaje para enviarle</button>`, "info");
+    $("#formConductor").reset();
+    btn.disabled = false; btn.textContent = "+ Crear conductor";
+    await cargarTodo();
+  });
+
+  function textoInstrucciones(nombre, cedula, clave) {
+    const url = cfg.URL_APP || location.origin + location.pathname.replace(/admin\.html$/, "");
+    return `Hola ${nombre}, esta es la app de Kernel Energy para registrar los tanqueos de combustible.\n\n` +
+      `1. Abre este enlace en tu celular: ${url}\n` +
+      `2. Instálala: Android/Chrome → menú ⋮ → "Instalar aplicación" · iPhone/Safari → Compartir → "Añadir a pantalla de inicio".\n` +
+      `3. Ingresa con tu cédula ${cedula}` + (clave ? ` y la contraseña: ${clave}` : " y la contraseña que te asignaron") + `.\n` +
+      `4. Cada vez que tanquees: toca "Tomar foto del recibo", revisa los datos que la app lee y presiona "Enviar al administrador".\n\n` +
+      `Puedes activar el ingreso con huella cuando la app te lo pregunte.`;
+  }
+  async function compartirTexto(texto) {
+    if (navigator.share) { try { await navigator.share({ title: "App de combustible Kernel Energy", text: texto }); return; } catch (e) { if (e.name === "AbortError") return; } }
+    try { await navigator.clipboard.writeText(texto); toast("Mensaje copiado. Pégalo en WhatsApp.", "success"); }
+    catch { prompt("Copia este mensaje:", texto); }
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-msg-conductor]"); if (!b) return;
+    const [nombre, cedula, clave] = b.dataset.msgConductor.split("|");
+    compartirTexto(textoInstrucciones(nombre, cedula, clave));
+  });
+  $("#btnCompartir").addEventListener("click", () => compartirTexto(textoInstrucciones("", "(tu cédula)", "").replace("Hola , ", "Hola, ")));
 
   // ============================================================
   //  Tiempo real: refresca cuando un conductor envía un tanqueo

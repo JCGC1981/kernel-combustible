@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="css/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/common.js"></script>
   <script src="js/biometria.js"></script>
@@ -40,6 +41,10 @@
   <main class="content">
     <!-- ================= RESUMEN ================= -->
     <section id="tab-resumen" class="tab active">
+      <div class="row between mb">
+        <span class="muted small" id="ultimaActualizacion"></span>
+        <button class="btn sm success" id="btnExcelTodo" title="Descarga un Excel con toda la información actual: resumen, tanqueos, recargas, vehículos y conductores">📊 Exportar todo a Excel</button>
+      </div>
       <div class="kpis" id="kpis"></div>
       <div class="charts">
         <div class="card"><h3>Gasto mensual (últimos 12 meses)</h3><div class="chart-box"><canvas id="chartMeses"></canvas></div></div>
@@ -61,7 +66,8 @@
         <div class="card-title">
           <h2>Tanqueos</h2>
           <div class="row">
-            <button class="btn sm" id="btnExportar">⬇ Exportar CSV</button>
+            <button class="btn sm success" id="btnExportar" title="Excel solo con los tanqueos que cumplen los filtros">📊 Excel (según filtros)</button>
+            <button class="btn sm" id="btnExportarCSV" title="Archivo de texto separado por punto y coma">⬇ CSV</button>
             <button class="btn sm primary" id="btnNuevoTanqueo">+ Registrar manualmente</button>
           </div>
         </div>
@@ -109,11 +115,20 @@
     <!-- ================= CONDUCTORES ================= -->
     <section id="tab-conductores" class="tab">
       <div class="card">
+        <div class="card-title"><h2>Agregar conductor</h2><button class="btn sm" id="btnCompartir" title="Mensaje con el enlace e instrucciones para enviar por WhatsApp">📲 Compartir app</button></div>
+        <p class="muted small">El conductor ingresará a la app con su <strong>cédula</strong> y la contraseña que definas aquí. Solo podrá tomar la foto del recibo y enviarla.</p>
+        <form id="formConductor" class="grid grid-3">
+          <div class="field"><label for="cNombre">Nombre completo *</label><input type="text" id="cNombre" required maxlength="80" placeholder="Ej: Jorge Alberto Prieto Castro"></div>
+          <div class="field"><label for="cCedula">Cédula *</label><input type="text" id="cCedula" required inputmode="numeric" pattern="[0-9]{5,15}" maxlength="15" placeholder="Ej: 14135620"></div>
+          <div class="field"><label for="cTelefono">Teléfono</label><input type="tel" id="cTelefono" maxlength="20" placeholder="Opcional"></div>
+          <div class="field"><label for="cClave">Contraseña inicial *</label><input type="text" id="cClave" required minlength="6" maxlength="40" placeholder="Mínimo 6 caracteres"></div>
+          <div class="field"><label for="cVehiculo">Vehículo asignado</label><select id="cVehiculo"><option value="">Sin asignar</option></select></div>
+          <div class="field" style="display:flex;align-items:flex-end"><button type="submit" class="btn primary block" id="btnCrearConductor">+ Crear conductor</button></div>
+        </form>
+        <div id="msgConductor" class="alert" hidden></div>
+      </div>
+      <div class="card">
         <div class="card-title"><h2>Usuarios y conductores</h2></div>
-        <div class="alert info small">
-          Para crear un nuevo conductor: en Supabase ve a <strong>Authentication → Users → Add user → Create new user</strong>,
-          escribe su correo y una contraseña y marca <em>Auto Confirm User</em>. Luego presiona ↻ aquí, edita su nombre y asígnale su vehículo en la pestaña Vehículos.
-        </div>
         <div class="table-wrap"><table id="tablaConductores"></table></div>
       </div>
     </section>

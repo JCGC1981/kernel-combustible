@@ -251,6 +251,11 @@ insert into public.vehiculos (placa, tipo, marca_modelo, anio, color, combustibl
 on conflict (placa) do nothing;
 
 -- ------------------------------------------------------------
+-- 7b. CONDUCTORES CREADOS DESDE LA APP (ingreso con cédula + contraseña)
+--     Ver detalle en supabase/actualizacion-conductores.sql (se ejecuta después de este archivo)
+-- ------------------------------------------------------------
+
+-- ------------------------------------------------------------
 -- 8. DESPUÉS de crear tu usuario en Authentication → Users,
 --    conviértelo en administrador ejecutando (con tu correo):
 --

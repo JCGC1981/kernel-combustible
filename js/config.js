@@ -8,6 +8,9 @@ window.KE_CONFIG = {
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHVqc3JhZnVtY2Jqb2FscGZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzMzU2ODksImV4cCI6MjEwNDkxMTY4OX0.yWHx21doBAF5W0IinSUxz591f4kpgcX9Lv40ArCYcCg",
 
   EMPRESA: "Kernel Energy S.A.S.",
+  // Los conductores ingresan con cédula; la app les crea una cuenta técnica cedula@DOMINIO
+  DOMINIO_CONDUCTORES: "conductores.kernelenergy.com",
+  URL_APP: "https://jcgc1981.github.io/kernel-combustible/",
   BUCKET_RECIBOS: "recibos",          // nombre del bucket de Storage
   ZONA_HORARIA: "America/Bogota",
   TIPOS_COMBUSTIBLE: ["Corriente", "Extra", "Diésel (ACPM)", "GNV"],

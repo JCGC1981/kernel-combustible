@@ -27,8 +27,8 @@
       <!-- Inicio de sesión -->
       <form id="formLogin">
         <div class="field">
-          <label for="email">Correo electrónico</label>
-          <input type="email" id="email" required autocomplete="username" inputmode="email" placeholder="usuario@kernelenergy.com">
+          <label for="email">Cédula (conductores) o correo (administrador)</label>
+          <input type="text" id="email" required autocomplete="username" placeholder="Ej: 14135620">
         </div>
         <div class="field">
           <label for="password">Contraseña</label>
@@ -159,7 +159,7 @@
         paso("Validando contraseña…");
         let data, error;
         try {
-          ({ data, error } = await conTiempo(sb.auth.signInWithPassword({ email: $("#email").value.trim(), password: $("#password").value }), 25, "validar contraseña"));
+          ({ data, error } = await conTiempo(sb.auth.signInWithPassword({ email: KE.aCorreoUsuario($("#email").value), password: $("#password").value }), 25, "validar contraseña"));
         } catch (e) { error = e; }
         if (error) { mostrar(mensajeError(error)); paso(""); btn.disabled = false; btn.textContent = "Ingresar"; return; }
         if (data && data.session && !procesandoIngreso) { procesandoIngreso = true; sesionActual = data.session; await ofrecerHuella(data.session); }
@@ -168,6 +168,7 @@
       $("#btnReset").addEventListener("click", async () => {
         const email = $("#email").value.trim();
         if (!email) { mostrar("Escribe tu correo y vuelve a presionar el enlace.", "warn"); return; }
+        if (/^\d+$/.test(email)) { mostrar("Los conductores no pueden restablecer la contraseña por correo. Pide al administrador que te asigne una nueva.", "warn"); return; }
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href.split("#")[0] });
         if (error) mostrar(mensajeError(error));
         else mostrar("Te enviamos un correo con el enlace para restablecer tu contraseña.", "info");

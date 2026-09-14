@@ -8,6 +8,16 @@ de la flota de **Kernel Energy S.A.S.**
 | **Administrador** | Panel completo: saldo, recargas en COP, todos los tanqueos con foto del recibo, aprobar/rechazar, gráficas, exportar a Excel (CSV), gestionar vehículos y conductores. También puede registrar sus propios tanqueos con foto (botón **📷 Registrar tanqueo**); quedan aprobados de inmediato. |
 | **Conductor** | Únicamente: tomar la foto del recibo desde la app; **la app lee automáticamente los datos del recibo** (fecha, N° recibo, galones, $/galón, total, combustible, estación, placa, kilometraje), el conductor los verifica y envía. Ve el estado de sus propios envíos. No ve nada más. |
 
+## 📊 Exportar a Excel en tiempo real
+
+El panel siempre muestra los datos vivos (se actualiza solo cuando llega un recibo). Desde ahí:
+- **Resumen → 📊 Exportar todo a Excel**: genera al instante un archivo `.xlsx` con 5 hojas:
+  *Resumen* (saldo, recargas, gasto, pendientes, consumo por vehículo, gasto mensual), *Tanqueos*
+  (todos los registros, con fila TOTAL con fórmulas y filtros automáticos), *Recargas*, *Vehículos*
+  y *Conductores*. Fechas y valores en pesos con formato real de Excel.
+- **Tanqueos → 📊 Excel (según filtros)**: solo los tanqueos que cumplen los filtros aplicados
+  (placa, conductor, estado, fechas, texto). También está el botón **CSV**.
+
 ## 🔒 Ingreso con huella digital / Face ID
 
 La primera vez se entra con correo y contraseña; la app pregunta *"¿Usar tu huella para entrar?"*.
@@ -124,25 +134,30 @@ SUPABASE_ANON_KEY: "eyJhbGciOi...",
 - *Site URL*: `https://TU-USUARIO.github.io/kernel-combustible/`
 - *Redirect URLs*: agrega `https://TU-USUARIO.github.io/kernel-combustible/**`
 
-### Paso 6 · Crear los conductores y asignar vehículos
+### Paso 6 · Crear los conductores desde la app (ingresan con cédula)
 
-Por cada conductor: **Authentication → Users → Add user → Create new user** (correo + contraseña,
-*Auto Confirm User*). Luego, en la app como administrador:
+Preparación (una sola vez):
+1. **SQL Editor → New query** → pega y ejecuta [`supabase/actualizacion-conductores.sql`](supabase/actualizacion-conductores.sql).
+2. **Authentication → Providers → Email** → desactiva **Confirm email** → Save.
+   (Los conductores no tienen correo real; la app les crea una cuenta técnica `cedula@conductores.kernelenergy.com`.
+   Una regla en la base de datos rechaza cualquier cuenta que el administrador no haya autorizado desde el panel.)
 
-1. Pestaña **Conductores** → clic en el usuario → escribe su nombre completo → Guardar.
-2. Pestaña **Vehículos** → clic en la placa → *Conductor asignado* → Guardar.
+Luego, en la app como administrador → pestaña **Conductores → Agregar conductor**: nombre, cédula,
+teléfono, contraseña inicial y vehículo asignado → **Crear conductor**. Aparece el botón
+**📲 Copiar mensaje para enviarle** con el enlace, la cédula, la contraseña y las instrucciones
+de instalación (para WhatsApp). El botón **📲 Compartir app** arma el mensaje genérico.
 
-Asignación inicial de la flota:
+Conductores iniciales:
 
-| Placa | Vehículo | Conductor |
+| Conductor | Cédula | Vehículo |
 |---|---|---|
-| LPN205 | Camioneta NHR DC EVI 2026, blanco | Jorge Alberto Prieto |
-| KST307 | Camioneta Nissan NP300 Frontier 2022, plata | Julio Cesar Gomez |
-| NYU846 | Camioneta Nissan NP300 Frontier 2026, plata | Julio Cesar Gomez |
-| JOL153 | Camioneta Nissan NP300 Frontier 2020, rojo | Julio Cesar Gomez |
-| LZQ931 | Automóvil KIA K3 Cross 2025, blanco | Johana Karina Paniza |
+| Jorge Alberto Prieto Castro | 14135620 | LPN205 |
+| Johana Karina Paniza Erazo | 1116780506 | LZQ931 |
+| Castor Paul Gonzalez Hernandez | 17595357 | (asignar) |
 
-Entrega a cada conductor su correo y contraseña. Pueden cambiarla con *¿Olvidaste tu contraseña?*.
+El conductor entra con **cédula + contraseña**, puede cambiarla con el botón 🔑 dentro de la app y
+activar la huella. Si la olvida, el administrador le asigna una nueva: **Conductores → clic en el
+conductor → 🔑 Nueva contraseña**. Para desactivar a un conductor: mismo cuadro → Estado → Inactivo.
 
 ### Paso 7 · Instalar en el celular como app
 
