@@ -65,8 +65,9 @@ window.KE = (function () {
     toastTimer = setTimeout(() => (el.className = ""), 3500);
   }
 
-  async function getPerfil() {
-    const { data: { user } } = await sb.auth.getUser();
+  async function getPerfil(userConocido) {
+    let user = userConocido;
+    if (!user) { const { data } = await sb.auth.getSession(); user = data.session && data.session.user; }
     if (!user) return null;
     const { data } = await sb.from("perfiles").select("*").eq("id", user.id).maybeSingle();
     return data || { id: user.id, email: user.email, nombre: user.email, rol: "conductor", activo: true };
@@ -76,7 +77,7 @@ window.KE = (function () {
   async function requireAuth(rol) {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) { location.replace("index.html"); return new Promise(() => {}); }
-    const perfil = await getPerfil();
+    const perfil = await getPerfil(session.user);
     if (!perfil.activo) {
       await sb.auth.signOut();
       alert("Tu usuario está inactivo. Contacta al administrador.");
