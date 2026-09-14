@@ -10,7 +10,7 @@
   $("#btnRecargar").addEventListener("click", () => cargarTodo(true));
   const btnHuella = $("#btnHuella"); btnHuella.hidden = false; KE.configurarBotonHuella(btnHuella, perfil);
 
-  const S = { perfiles: [], vehiculos: [], recargas: [], tanqueos: [], charts: {} };
+  const S = { perfiles: [], vehiculos: [], recargas: [], tanqueos: [], auditoria: [], charts: {} };
   const nombreDe = (id) => (S.perfiles.find((p) => p.id === id) || {}).nombre || "—";
   const vehiculoDe = (placa) => S.vehiculos.find((v) => v.placa === placa) || {};
   const cuentaGasto = (t) => t.estado !== "rechazado";
@@ -20,15 +20,17 @@
   //  Carga de datos
   // ============================================================
   async function cargarTodo(aviso = false) {
-    const [p, v, r, t] = await Promise.all([
+    const [p, v, r, t, a] = await Promise.all([
       sb.from("perfiles").select("*").order("nombre"),
       sb.from("vehiculos").select("*").order("placa"),
       sb.from("recargas").select("*").order("fecha", { ascending: false }).order("creado_en", { ascending: false }),
       sb.from("tanqueos").select("*").order("fecha_tanqueo", { ascending: false }),
+      sb.from("auditoria").select("*").order("fecha", { ascending: false }).limit(300),
     ]);
     const err = [p, v, r, t].find((x) => x.error);
     if (err) { toast(mensajeError(err.error), "error"); return; }
     S.perfiles = p.data; S.vehiculos = v.data; S.recargas = r.data; S.tanqueos = t.data;
+    S.auditoria = a.error ? [] : a.data;   // (vacío si aún no se ejecutó seguridad.sql)
     renderTodo();
     $("#ultimaActualizacion").textContent = "Datos al " + fmtFechaHora(new Date().toISOString()) + " · se actualiza automáticamente";
     if (aviso) toast("Datos actualizados", "success");
@@ -41,6 +43,7 @@
     renderRecargas();
     renderVehiculos();
     renderConductores();
+    renderAuditoria();
     const pend = S.tanqueos.filter((t) => t.estado === "pendiente").length;
     const b = $("#badgePendientes"); b.textContent = pend; b.hidden = !pend;
   }
@@ -305,6 +308,12 @@
     return ws;
   }
 
+  function hojaAuditoria() {
+    const ws = XLSX.utils.json_to_sheet(S.auditoria.map((a) => ({ "Fecha": fechaExcel(a.fecha), "Usuario": a.usuario || "sistema", "Tabla": NOMBRE_TABLA[a.tabla] || a.tabla, "Operación": NOMBRE_OP[a.operacion] || a.operacion, "Registro": a.registro || "", "Detalle": detalleAud(a).replace(/<[^>]+>/g, "") })));
+    estilizarHoja(ws, { "Fecha": FMT_FECHA_HORA }, [17, 24, 14, 13, 38, 90]);
+    return ws;
+  }
+
   function exportarExcel(soloFiltrados) {
     if (!window.XLSX) { toast("No se pudo cargar el generador de Excel. Verifica tu conexión.", "error"); return; }
     const wb = XLSX.utils.book_new();
@@ -318,6 +327,7 @@
       XLSX.utils.book_append_sheet(wb, hojaRecargas(), "Recargas");
       XLSX.utils.book_append_sheet(wb, hojaVehiculos(), "Vehículos");
       XLSX.utils.book_append_sheet(wb, hojaConductores(), "Conductores");
+      XLSX.utils.book_append_sheet(wb, hojaAuditoria(), "Auditoría");
       XLSX.writeFile(wb, `Kernel_Energy_Combustible_${hoyISO()}.xlsx`);
     }
     toast("Excel generado con los datos actuales", "success");
@@ -603,9 +613,9 @@
     const form = modal.querySelector("#formCond");
     form.addEventListener("click", async (e) => {
       if (!e.target.closest("[data-accion=clave]")) return;
-      const clave = prompt(`Nueva contraseña para ${p.nombre} (mínimo 6 caracteres):`);
+      const clave = prompt(`Nueva contraseña para ${p.nombre} (mínimo 8 caracteres):`);
       if (clave === null) return;
-      if (clave.trim().length < 6) { toast("La contraseña debe tener al menos 6 caracteres", "error"); return; }
+      if (clave.trim().length < 8) { toast("La contraseña debe tener al menos 8 caracteres", "error"); return; }
       const { error } = await sb.rpc("admin_restablecer_clave", { p_uid: uid, p_clave: clave.trim() });
       if (error) { toast(mensajeError(error), "error"); return; }
       toast(`Contraseña actualizada para ${p.nombre}`, "success");
@@ -633,7 +643,7 @@
     const nombre = $("#cNombre").value.trim(), cedula = $("#cCedula").value.trim(), telefono = $("#cTelefono").value.trim() || null;
     const clave = $("#cClave").value, placa = $("#cVehiculo").value;
     if (!KE.esCedula(cedula)) { mostrarMsgConductor("La cédula debe tener solo números (5 a 15 dígitos).", "error"); return; }
-    if (clave.length < 6) { mostrarMsgConductor("La contraseña debe tener al menos 6 caracteres.", "error"); return; }
+    if (clave.length < 8) { mostrarMsgConductor("La contraseña debe tener al menos 8 caracteres.", "error"); return; }
     if (S.perfiles.some((p) => p.cedula === cedula)) { mostrarMsgConductor("Ya existe un conductor con esa cédula.", "error"); return; }
     const btn = $("#btnCrearConductor"); btn.disabled = true; btn.textContent = "Creando…"; mostrarMsgConductor("");
 
@@ -684,6 +694,116 @@
     compartirTexto(textoInstrucciones(nombre, cedula, clave));
   });
   $("#btnCompartir").addEventListener("click", () => compartirTexto(textoInstrucciones("", "(tu cédula)", "").replace("Hola , ", "Hola, ")));
+
+  // ============================================================
+  //  AUDITORÍA (solo lectura)
+  // ============================================================
+  const NOMBRE_TABLA = { tanqueos: "Tanqueo", recargas: "Recarga", vehiculos: "Vehículo", perfiles: "Usuario", conductores_autorizados: "Conductor autorizado" };
+  const NOMBRE_OP = { INSERT: "Creación", UPDATE: "Modificación", DELETE: "Eliminación" };
+  const CAMPOS_AUD = ["numero_recibo", "placa", "conductor_id", "fecha_tanqueo", "galones", "valor_galon", "valor_total", "estado", "motivo_rechazo", "kilometraje", "estacion", "fecha", "valor", "medio", "referencia", "descripcion", "nombre", "rol", "activo", "cedula", "telefono", "marca_modelo", "anio", "color", "tipo", "combustible_predeterminado", "observaciones"];
+  const valorAud = (k, v) => {
+    if (v === null || v === undefined || v === "") return "—";
+    if (k === "conductor_id" || k === "revisado_por" || k === "creado_por") return nombreDe(v);
+    if (/^(valor|valor_galon|valor_total)$/.test(k)) return fmtCOP(v);
+    if (k === "fecha_tanqueo") return fmtFechaHora(v);
+    return String(v);
+  };
+  function detalleAud(a) {
+    if (a.operacion === "UPDATE" && a.antes && a.despues) {
+      const cambios = CAMPOS_AUD.filter((k) => JSON.stringify(a.antes[k]) !== JSON.stringify(a.despues[k]))
+        .map((k) => `<b>${k}</b>: ${escapeHtml(valorAud(k, a.antes[k]))} → ${escapeHtml(valorAud(k, a.despues[k]))}`);
+      return cambios.join(" · ") || '<span class="muted">sin cambios en campos visibles</span>';
+    }
+    const d = a.despues || a.antes || {};
+    return CAMPOS_AUD.filter((k) => d[k] !== undefined && d[k] !== null && d[k] !== "").slice(0, 7).map((k) => `<b>${k}</b>: ${escapeHtml(valorAud(k, d[k]))}`).join(" · ");
+  }
+  function renderAuditoria() {
+    const tabla = $("#aTabla").value, op = $("#aOperacion").value, texto = $("#aTexto").value.trim().toLowerCase();
+    const lista = S.auditoria.filter((a) => (!tabla || a.tabla === tabla) && (!op || a.operacion === op) &&
+      (!texto || `${a.usuario || ""} ${a.registro || ""} ${JSON.stringify(a.despues || a.antes || {})}`.toLowerCase().includes(texto)));
+    $("#tablaAuditoria").innerHTML = `<thead><tr><th>Fecha</th><th>Usuario</th><th>Tabla</th><th>Operación</th><th>Registro</th><th>Detalle</th></tr></thead><tbody>` +
+      (lista.length ? lista.map((a) => `<tr><td>${fmtFechaHora(a.fecha)}</td><td>${escapeHtml(a.usuario || "sistema")}</td><td>${NOMBRE_TABLA[a.tabla] || escapeHtml(a.tabla)}</td>
+        <td><span class="badge ${a.operacion === "DELETE" ? "rechazado" : a.operacion === "UPDATE" ? "pendiente" : "aprobado"}">${NOMBRE_OP[a.operacion] || a.operacion}</span></td>
+        <td class="small">${escapeHtml((a.registro || "").slice(0, 8))}</td><td class="small" style="white-space:normal;min-width:320px">${detalleAud(a)}</td></tr>`).join("")
+      : `<tr><td colspan="6" class="muted center">${S.auditoria.length ? "Sin movimientos con esos filtros" : "Aún no hay registros de auditoría (ejecuta supabase/seguridad.sql)"}</td></tr>`) + `</tbody>`;
+  }
+  ["aTabla", "aOperacion", "aTexto"].forEach((id) => $("#" + id).addEventListener("input", renderAuditoria));
+
+  // ============================================================
+  //  SEGURIDAD DE LA CUENTA: verificación en dos pasos (TOTP)
+  // ============================================================
+  async function estadoMFA() {
+    const { data, error } = await sb.auth.mfa.listFactors();
+    if (error) throw error;
+    const todos = data.all || data.totp || [];
+    return { verificados: todos.filter((f) => f.status === "verified"), pendientes: todos.filter((f) => f.status !== "verified") };
+  }
+  $("#btnSeguridad").addEventListener("click", abrirSeguridad);
+  async function abrirSeguridad() {
+    let est; try { est = await estadoMFA(); } catch (e) { toast(mensajeError(e), "error"); return; }
+    const activo = est.verificados.length > 0;
+    const modal = abrirModal(`
+      <div class="modal-head"><h2>🛡️ Seguridad de la cuenta</h2><button class="close" data-cerrar aria-label="Cerrar">×</button></div>
+      <div class="card" style="margin:0 0 1rem">
+        <h3>Verificación en dos pasos ${activo ? '<span class="badge aprobado">activa</span>' : '<span class="badge pendiente">inactiva</span>'}</h3>
+        <p class="muted small">Además de la contraseña, se pide un código de 6 dígitos de una app de autenticación (Google Authenticator, Microsoft Authenticator, Authy).
+        Con esto, aunque alguien conozca tu contraseña, no podrá entrar ni modificar nada: la base de datos exige el segundo paso para toda operación de administrador.</p>
+        <div id="mfaZona">
+          ${activo
+            ? `<button class="btn danger" id="btnMfaOff">Desactivar verificación en dos pasos</button>`
+            : `<button class="btn primary" id="btnMfaOn">Activar verificación en dos pasos</button>`}
+        </div>
+      </div>
+      <div class="card" style="margin:0">
+        <h3>Recomendaciones</h3>
+        <ul class="small muted" style="margin:0;padding-left:1.2rem">
+          <li>Usa una contraseña larga y única para el administrador (mínimo 8 caracteres; ideal 12+).</li>
+          <li>No compartas tu cuenta: crea a cada conductor con su propia cédula y contraseña.</li>
+          <li>Si un conductor deja la empresa, márcalo <b>Inactivo</b> en Conductores; pierde el acceso de inmediato.</li>
+          <li>Revisa la pestaña <b>Auditoría</b>: cada cambio queda registrado con quién y cuándo, y no puede borrarse.</li>
+        </ul>
+      </div>`);
+    const zona = modal.querySelector("#mfaZona");
+    const btnOn = modal.querySelector("#btnMfaOn"), btnOff = modal.querySelector("#btnMfaOff");
+    if (btnOn) btnOn.addEventListener("click", async () => {
+      btnOn.disabled = true;
+      try {
+        for (const f of est.pendientes) await sb.auth.mfa.unenroll({ factorId: f.id }); // limpiar intentos previos
+        const { data, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "Kernel Energy Combustible" });
+        if (error) throw error;
+        zona.innerHTML = `
+          <p class="small"><b>1.</b> Instala una app de autenticación en tu celular (Google Authenticator o Microsoft Authenticator).<br>
+          <b>2.</b> Escanea este código QR desde la app (o escribe la clave manualmente).<br>
+          <b>3.</b> Escribe aquí el código de 6 dígitos que muestra la app.</p>
+          <div class="row" style="align-items:flex-start">
+            <img src="${data.totp.qr_code}" alt="Código QR" style="width:180px;height:180px;border:1px solid var(--border);border-radius:8px;background:#fff">
+            <div class="grow">
+              <label>Clave manual</label><div class="ocr-texto" style="max-height:none">${escapeHtml(data.totp.secret)}</div>
+              <label class="mt" for="mfaCodigo">Código de 6 dígitos</label>
+              <input id="mfaCodigo" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="000000" style="font-size:1.3rem;letter-spacing:.3em;text-align:center">
+              <div class="actions"><button class="btn primary" id="btnMfaVerificar">Confirmar y activar</button></div>
+              <p class="small" id="mfaMsg"></p>
+            </div>
+          </div>`;
+        zona.querySelector("#btnMfaVerificar").addEventListener("click", async () => {
+          const code = zona.querySelector("#mfaCodigo").value.replace(/\s+/g, "");
+          const m = zona.querySelector("#mfaMsg");
+          if (!/^\d{6}$/.test(code)) { m.textContent = "El código tiene 6 dígitos."; return; }
+          const r = await sb.auth.mfa.challengeAndVerify({ factorId: data.id, code });
+          if (r.error) { m.textContent = "Código incorrecto o vencido. Intenta con el siguiente código."; return; }
+          toast("Verificación en dos pasos activada", "success"); cerrarModal();
+        });
+      } catch (e) { toast(mensajeError(e), "error"); btnOn.disabled = false; }
+    });
+    if (btnOff) btnOff.addEventListener("click", async () => {
+      if (!confirm("¿Desactivar la verificación en dos pasos? Tu cuenta quedará protegida solo por la contraseña.")) return;
+      for (const f of [...est.verificados, ...est.pendientes]) {
+        const { error } = await sb.auth.mfa.unenroll({ factorId: f.id });
+        if (error) { toast(mensajeError(error), "error"); return; }
+      }
+      toast("Verificación en dos pasos desactivada"); cerrarModal();
+    });
+  }
 
   // ============================================================
   //  Tiempo real: refresca cuando un conductor envía un tanqueo

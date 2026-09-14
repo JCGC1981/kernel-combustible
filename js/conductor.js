@@ -20,8 +20,8 @@
   $("#btnLogout").addEventListener("click", logout);
   const btnHuella = $("#btnHuella"); btnHuella.hidden = false; KE.configurarBotonHuella(btnHuella, perfil);
   $("#btnClave").addEventListener("click", async () => {
-    const c1 = prompt("Nueva contraseña (mínimo 6 caracteres):"); if (c1 === null) return;
-    if (c1.length < 6) { toast("Debe tener al menos 6 caracteres", "error"); return; }
+    const c1 = prompt("Nueva contraseña (mínimo 8 caracteres):"); if (c1 === null) return;
+    if (c1.length < 8) { toast("Debe tener al menos 8 caracteres", "error"); return; }
     const c2 = prompt("Repite la nueva contraseña:"); if (c2 === null) return;
     if (c1 !== c2) { toast("Las contraseñas no coinciden", "error"); return; }
     const { error } = await sb.auth.updateUser({ password: c1 });

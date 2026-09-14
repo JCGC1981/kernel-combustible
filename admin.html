@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; connect-src 'self' data: https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://tessdata.projectnaptha.com; img-src 'self' data: blob: https://*.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
   <title>Panel administrador · Kernel Energy</title>
   <meta name="theme-color" content="#001a7c">
   <link rel="manifest" href="manifest.webmanifest">
@@ -28,10 +30,12 @@
       <button data-tab="recargas">Recargas</button>
       <button data-tab="vehiculos">Vehículos</button>
       <button data-tab="conductores">Conductores</button>
+      <button data-tab="auditoria">Auditoría</button>
     </nav>
     <div class="userbox">
       <a class="btn sm primary" href="conductor.html" title="Tomar foto de un recibo y registrar un tanqueo">📷 Registrar tanqueo</a>
       <span id="userName"></span>
+      <button class="btn sm" id="btnSeguridad" title="Verificación en dos pasos y seguridad de la cuenta">🛡️</button>
       <button class="btn sm" id="btnHuella" hidden>🔓 Huella</button>
       <button class="btn sm" id="btnRecargar" title="Actualizar datos">↻</button>
       <button class="btn sm" id="btnLogout">Salir</button>
@@ -121,7 +125,7 @@
           <div class="field"><label for="cNombre">Nombre completo *</label><input type="text" id="cNombre" required maxlength="80" placeholder="Ej: Jorge Alberto Prieto Castro"></div>
           <div class="field"><label for="cCedula">Cédula *</label><input type="text" id="cCedula" required inputmode="numeric" pattern="[0-9]{5,15}" maxlength="15" placeholder="Ej: 14135620"></div>
           <div class="field"><label for="cTelefono">Teléfono</label><input type="tel" id="cTelefono" maxlength="20" placeholder="Opcional"></div>
-          <div class="field"><label for="cClave">Contraseña inicial *</label><input type="text" id="cClave" required minlength="6" maxlength="40" placeholder="Mínimo 6 caracteres"></div>
+          <div class="field"><label for="cClave">Contraseña inicial *</label><input type="text" id="cClave" required minlength="8" maxlength="40" placeholder="Mínimo 8 caracteres"></div>
           <div class="field"><label for="cVehiculo">Vehículo asignado</label><select id="cVehiculo"><option value="">Sin asignar</option></select></div>
           <div class="field" style="display:flex;align-items:flex-end"><button type="submit" class="btn primary block" id="btnCrearConductor">+ Crear conductor</button></div>
         </form>
@@ -130,6 +134,19 @@
       <div class="card">
         <div class="card-title"><h2>Usuarios y conductores</h2></div>
         <div class="table-wrap"><table id="tablaConductores"></table></div>
+      </div>
+    </section>
+
+    <!-- ================= AUDITORÍA ================= -->
+    <section id="tab-auditoria" class="tab">
+      <div class="card">
+        <div class="card-title"><h2>Auditoría</h2><span class="muted small">Últimos 300 movimientos · este historial no puede modificarse ni borrarse</span></div>
+        <div class="filters">
+          <div><label>Tabla</label><select id="aTabla"><option value="">Todas</option><option value="tanqueos">Tanqueos</option><option value="recargas">Recargas</option><option value="vehiculos">Vehículos</option><option value="perfiles">Usuarios</option><option value="conductores_autorizados">Conductores autorizados</option></select></div>
+          <div><label>Operación</label><select id="aOperacion"><option value="">Todas</option><option value="INSERT">Creación</option><option value="UPDATE">Modificación</option><option value="DELETE">Eliminación</option></select></div>
+          <div><label>Buscar</label><input type="search" id="aTexto" placeholder="usuario, placa, recibo…"></div>
+        </div>
+        <div class="table-wrap"><table id="tablaAuditoria"></table></div>
       </div>
     </section>
   </main>

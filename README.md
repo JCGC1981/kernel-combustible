@@ -8,6 +8,24 @@ de la flota de **Kernel Energy S.A.S.**
 | **Administrador** | Panel completo: saldo, recargas en COP, todos los tanqueos con foto del recibo, aprobar/rechazar, gráficas, exportar a Excel (CSV), gestionar vehículos y conductores. También puede registrar sus propios tanqueos con foto (botón **📷 Registrar tanqueo**); quedan aprobados de inmediato. |
 | **Conductor** | Únicamente: tomar la foto del recibo desde la app; **la app lee automáticamente los datos del recibo** (fecha, N° recibo, galones, $/galón, total, combustible, estación, placa, kilometraje), el conductor los verifica y envía. Ve el estado de sus propios envíos. No ve nada más. |
 
+## 🛡️ Seguridad
+
+Ejecuta una vez [`supabase/seguridad.sql`](supabase/seguridad.sql) (SQL Editor → Run). Con eso:
+
+| Capa | Qué protege |
+|---|---|
+| **Reglas en la base de datos (RLS)** | Un conductor solo puede crear sus propios tanqueos (siempre "pendientes") y ver los suyos; no puede editar, borrar, aprobar, ver recargas, vehículos de otros ni cambiar su rol. Aunque manipule la app o llame a la API directamente, el servidor lo rechaza. |
+| **Cuentas no autorizadas** | Solo el administrador crea conductores (por cédula). Cualquier otra cuenta que aparezca queda **inactiva y sin permisos** hasta que el administrador la active. Un usuario inactivo pierde el acceso al instante. |
+| **Verificación en dos pasos (2FA)** | Botón 🛡️ en el panel → *Activar*: escanea el QR con Google/Microsoft Authenticator. Desde entonces se pide el código de 6 dígitos al ingresar y la base de datos **exige** ese segundo paso para toda operación de administrador. |
+| **Auditoría inalterable** | Pestaña **Auditoría**: cada creación, modificación o eliminación en tanqueos, recargas, vehículos y usuarios queda registrada con quién y cuándo (valores antes/después). Nadie puede editarla ni borrarla desde la app. También se incluye en el Excel completo. |
+| **Fotos privadas** | Almacén privado; cada conductor solo sube a su carpeta y no puede sobrescribir ni borrar; los enlaces a las fotos caducan en 1 hora. |
+| **Blindaje del navegador (CSP)** | Las páginas solo ejecutan código propio y de las librerías conocidas (Supabase, Chart.js, SheetJS, Tesseract). Bloquea inyección de scripts. Sin referrer hacia terceros. |
+| **Contraseñas** | Mínimo 8 caracteres. Huella/Face ID opcional por dispositivo. El administrador puede asignar una nueva contraseña a un conductor; los conductores pueden cambiar la suya. |
+| **Transporte** | Todo va cifrado por HTTPS (GitHub Pages y Supabase). |
+
+Recomendaciones adicionales en Supabase: **Authentication → Providers → Email → Minimum password length: 8**;
+y en **Authentication → Rate limits** deja los valores por defecto (protegen contra intentos masivos).
+
 ## 📊 Exportar a Excel en tiempo real
 
 El panel siempre muestra los datos vivos (se actualiza solo cuando llega un recibo). Desde ahí:

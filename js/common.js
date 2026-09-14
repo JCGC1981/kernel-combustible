@@ -91,6 +91,11 @@ window.KE = (function () {
       return new Promise(() => {});
     }
     if (rol === "admin" && perfil.rol !== "admin") { location.replace("conductor.html"); return new Promise(() => {}); }
+    // Verificación en dos pasos pendiente → volver al ingreso para pedir el código
+    try {
+      const { data: aal } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") { location.replace("index.html"); return new Promise(() => {}); }
+    } catch (e) { console.warn("aal:", e); }
     // Bloqueo con huella (si el usuario la activó en este dispositivo)
     if (window.KE_BIO && KE_BIO.activo(session.user.id) && !KE_BIO.yaDesbloqueado()) {
       await KE_BIO.bloquear(perfil, async () => { await sb.auth.signOut(); location.replace("index.html"); });
