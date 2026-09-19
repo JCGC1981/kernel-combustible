@@ -10,7 +10,7 @@
   $("#btnRecargar").addEventListener("click", () => cargarTodo(true));
   const btnHuella = $("#btnHuella"); btnHuella.hidden = false; KE.configurarBotonHuella(btnHuella, perfil);
 
-  const S = { perfiles: [], vehiculos: [], recargas: [], tanqueos: [], auditoria: [], charts: {} };
+  const S = { perfiles: [], vehiculos: [], recargas: [], tanqueos: [], auditoria: [], seguros: [], segurosOk: true, charts: {} };
   const nombreDe = (id) => (S.perfiles.find((p) => p.id === id) || {}).nombre || "—";
   const vehiculoDe = (placa) => S.vehiculos.find((v) => v.placa === placa) || {};
   const cuentaGasto = (t) => t.estado !== "rechazado";
@@ -20,17 +20,19 @@
   //  Carga de datos
   // ============================================================
   async function cargarTodo(aviso = false) {
-    const [p, v, r, t, a] = await Promise.all([
+    const [p, v, r, t, a, sg] = await Promise.all([
       sb.from("perfiles").select("*").order("nombre"),
       sb.from("vehiculos").select("*").order("placa"),
       sb.from("recargas").select("*").order("fecha", { ascending: false }).order("creado_en", { ascending: false }),
       sb.from("tanqueos").select("*").order("fecha_tanqueo", { ascending: false }),
       sb.from("auditoria").select("*").order("fecha", { ascending: false }).limit(300),
+      sb.from("seguros").select("*"),
     ]);
     const err = [p, v, r, t].find((x) => x.error);
     if (err) { toast(mensajeError(err.error), "error"); return; }
     S.perfiles = p.data; S.vehiculos = v.data; S.recargas = r.data; S.tanqueos = t.data;
     S.auditoria = a.error ? [] : a.data;   // (vacío si aún no se ejecutó seguridad.sql)
+    S.segurosOk = !sg.error; S.seguros = sg.error ? [] : sg.data;   // (vacío si aún no se ejecutó seguros.sql)
     renderTodo();
     $("#ultimaActualizacion").textContent = "Datos al " + fmtFechaHora(new Date().toISOString()) + " · se actualiza automáticamente";
     if (aviso) toast("Datos actualizados", "success");
@@ -42,10 +44,44 @@
     renderTanqueos();
     renderRecargas();
     renderVehiculos();
+    renderSeguros();
     renderConductores();
     renderAuditoria();
     const pend = S.tanqueos.filter((t) => t.estado === "pendiente").length;
     const b = $("#badgePendientes"); b.textContent = pend; b.hidden = !pend;
+  }
+
+  // ============================================================
+  //  SEGUROS (SOAT y todo riesgo): estado por vencimiento
+  // ============================================================
+  const SEG_AVISO_DIAS = 30;
+  const TIPOS_SEGURO = [["soat", "SOAT"], ["todo_riesgo", "Todo riesgo"]];
+  const nombreSeguro = (tipo) => (TIPOS_SEGURO.find((x) => x[0] === tipo) || [])[1] || tipo;
+  const seguroDe = (placa, tipo) => S.seguros.find((s) => s.placa === placa && s.tipo === tipo) || null;
+  // días hasta la fecha (YYYY-MM-DD) contados en hora de Colombia
+  function diasHasta(ymd) {
+    if (!ymd) return null;
+    const [y, m, d] = ymd.split("-").map(Number);
+    const [hy, hm, hd] = hoyISO().split("-").map(Number);
+    return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(hy, hm - 1, hd)) / 86400000);
+  }
+  /** { clase, texto, urgencia }: 0 = sin novedad · 1 = por vencer (≤30 días) · 2 = vencido */
+  function estadoSeguro(s) {
+    const n = s ? diasHasta(s.fecha_fin) : null;
+    if (n === null) return { clase: "conductor", texto: "Sin registrar", urgencia: 0, dias: null };
+    if (n < 0) return { clase: "rechazado", texto: `Vencido hace ${-n} día${-n === 1 ? "" : "s"}`, urgencia: 2, dias: n };
+    if (n === 0) return { clase: "rechazado", texto: "Vence hoy", urgencia: 2, dias: n };
+    if (n <= SEG_AVISO_DIAS) return { clase: "pendiente", texto: `Vence en ${n} día${n === 1 ? "" : "s"}`, urgencia: 1, dias: n };
+    return { clase: "aprobado", texto: `Vigente hasta ${fmtFecha(s.fecha_fin)}`, urgencia: 0, dias: n };
+  }
+  /** Lista de alertas (vencidos o por vencer) para vehículos activos, las más urgentes primero */
+  function alertasSeguros() {
+    const out = [];
+    for (const v of S.vehiculos.filter((x) => x.activo)) for (const [tipo] of TIPOS_SEGURO) {
+      const s = seguroDe(v.placa, tipo), e = estadoSeguro(s);
+      if (e.urgencia) out.push({ placa: v.placa, tipo, seguro: s, estado: e });
+    }
+    return out.sort((a, b) => b.estado.urgencia - a.estado.urgencia || a.estado.dias - b.estado.dias);
   }
 
   // ============================================================
@@ -99,7 +135,20 @@
       <div class="kpi"><div class="label">Total recargado</div><div class="value">${fmtCOP(totalRecargas)}</div><div class="sub">${S.recargas.length} recargas</div></div>
       <div class="kpi"><div class="label">Gasto acumulado</div><div class="value">${fmtCOP(gastoTotal)}</div><div class="sub">${validos.length} tanqueos</div></div>
       <div class="kpi amber"><div class="label">Gasto ${nombreMes(mesActual)}</div><div class="value">${fmtCOP(gastoMes)}</div><div class="sub">${fmtNum(galMes, 2)} galones · ${delMes.length} tanqueos</div></div>
-      <div class="kpi ${pendientes.length ? "amber" : ""}"><div class="label">Pendientes por revisar</div><div class="value">${pendientes.length}</div><div class="sub">${fmtCOP(pendientes.reduce((a, t) => a + Number(t.valor_total), 0))}</div></div>`;
+      <div class="kpi ${pendientes.length ? "amber" : ""}"><div class="label">Pendientes por revisar</div><div class="value">${pendientes.length}</div><div class="sub">${fmtCOP(pendientes.reduce((a, t) => a + Number(t.valor_total), 0))}</div></div>
+      ${S.segurosOk ? (() => { const al = alertasSeguros(), venc = al.filter((x) => x.estado.urgencia === 2).length;
+        return `<div class="kpi ${venc ? "red" : al.length ? "amber" : "green"} clickable" data-goto="seguros" style="cursor:pointer"><div class="label">Seguros por vencer</div><div class="value">${al.length}</div><div class="sub">${venc ? `${venc} vencido${venc === 1 ? "" : "s"} · ` : ""}aviso ${SEG_AVISO_DIAS} días antes</div></div>`; })() : ""}`;
+
+    // Alerta de SOAT / todo riesgo vencidos o por vencer
+    const alertaSeg = $("#alertaSeguros");
+    const alertas = S.segurosOk ? alertasSeguros() : [];
+    if (alertas.length) {
+      const hayVencidos = alertas.some((x) => x.estado.urgencia === 2);
+      alertaSeg.className = `alert ${hayVencidos ? "error" : "warn"}`;
+      alertaSeg.innerHTML = `<strong>${hayVencidos ? "⚠️ Seguros vencidos" : "🛡️ Seguros por vencer"}:</strong> ` +
+        alertas.map((x) => `<a href="#" data-seguro="${x.placa}|${x.tipo}" style="color:inherit"><strong>${x.placa}</strong> ${nombreSeguro(x.tipo)} — ${x.estado.texto.toLowerCase()}</a>`).join(" · ");
+      alertaSeg.hidden = false;
+    } else alertaSeg.hidden = true;
 
     // Gráfica mensual
     const meses = [];
@@ -302,6 +351,18 @@
     estilizarHoja(ws, {}, [9, 12, 26, 6, 10, 20, 26, 10]);
     return ws;
   }
+  function hojaSeguros() {
+    const filas = [];
+    for (const v of S.vehiculos) for (const [tipo, nom] of TIPOS_SEGURO) {
+      const s = seguroDe(v.placa, tipo), e = estadoSeguro(s);
+      filas.push({ "Placa": v.placa, "Vehículo": v.marca_modelo, "Seguro": nom, "Aseguradora": s ? s.aseguradora || "" : "", "N° póliza": s ? s.numero_poliza || "" : "",
+        "Inicio": s ? fechaSolo(s.fecha_inicio) : null, "Vencimiento": s ? fechaSolo(s.fecha_fin) : null, "Días restantes": e.dias, "Estado": e.texto,
+        "Valor pagado": s && s.valor != null ? Number(s.valor) : null, "Archivo": s && s.archivo_path ? "Sí" : "No", "Observaciones": s ? s.observaciones || "" : "" });
+    }
+    const ws = XLSX.utils.json_to_sheet(filas.length ? filas : [{ "Placa": "", "Vehículo": "", "Seguro": "", "Vencimiento": "" }]);
+    estilizarHoja(ws, { "Inicio": FMT_FECHA, "Vencimiento": FMT_FECHA, "Días restantes": "0", "Valor pagado": FMT_COP }, [9, 24, 12, 20, 16, 12, 12, 12, 24, 14, 8, 30]);
+    return ws;
+  }
   function hojaConductores() {
     const ws = XLSX.utils.json_to_sheet(S.perfiles.map((p) => ({ "Nombre": p.nombre, "Correo": p.email || "", "Teléfono": p.telefono || "", "Rol": p.rol, "Vehículos asignados": S.vehiculos.filter((v) => v.conductor_id === p.id).map((v) => v.placa).join(", "), "Estado": p.activo ? "Activo" : "Inactivo", "Creado": fechaExcel(p.creado_en) })));
     estilizarHoja(ws, { "Creado": FMT_FECHA }, [26, 30, 14, 10, 24, 10, 12]);
@@ -326,6 +387,7 @@
       XLSX.utils.book_append_sheet(wb, hojaTanqueos(S.tanqueos), "Tanqueos");
       XLSX.utils.book_append_sheet(wb, hojaRecargas(), "Recargas");
       XLSX.utils.book_append_sheet(wb, hojaVehiculos(), "Vehículos");
+      if (S.segurosOk) XLSX.utils.book_append_sheet(wb, hojaSeguros(), "Seguros");
       XLSX.utils.book_append_sheet(wb, hojaConductores(), "Conductores");
       XLSX.utils.book_append_sheet(wb, hojaAuditoria(), "Auditoría");
       XLSX.writeFile(wb, `Kernel_Energy_Combustible_${hoyISO()}.xlsx`);
@@ -521,13 +583,137 @@
   //  VEHÍCULOS
   // ============================================================
   function renderVehiculos() {
-    $("#tablaVehiculos").innerHTML = `<thead><tr><th>Placa</th><th>Tipo</th><th>Marca / modelo</th><th>Año</th><th>Color</th><th>Combustible</th><th>Conductor asignado</th><th>Estado</th></tr></thead><tbody>` +
+    const segCol = (v) => S.segurosOk ? TIPOS_SEGURO.map(([tipo, nom]) => { const e = estadoSeguro(seguroDe(v.placa, tipo)); return `<span class="badge ${e.clase}" data-seguro="${v.placa}|${tipo}" title="${nom}: ${escapeHtml(e.texto)}" style="cursor:pointer">${nom.split(" ")[0]}${e.urgencia === 2 ? " ✗" : e.urgencia === 1 ? " !" : e.dias === null ? " ?" : " ✓"}</span>`; }).join(" ") : "";
+    $("#tablaVehiculos").innerHTML = `<thead><tr><th>Placa</th><th>Tipo</th><th>Marca / modelo</th><th>Año</th><th>Color</th><th>Combustible</th><th>Conductor asignado</th><th>Seguros</th><th>Estado</th></tr></thead><tbody>` +
       S.vehiculos.map((v) => `<tr class="clickable" data-placa="${v.placa}">
         <td><strong>${v.placa}</strong></td><td>${escapeHtml(v.tipo)}</td><td>${escapeHtml(v.marca_modelo)}</td><td>${v.anio ?? ""}</td><td>${escapeHtml(v.color || "")}</td>
         <td>${escapeHtml(v.combustible_predeterminado || "")}</td><td>${v.conductor_id ? escapeHtml(nombreDe(v.conductor_id)) : '<span class="muted">Sin asignar</span>'}</td>
+        <td>${segCol(v)}</td>
         <td>${v.activo ? '<span class="badge aprobado">activo</span>' : '<span class="badge inactivo">inactivo</span>'}</td></tr>`).join("") + `</tbody>`;
   }
-  document.addEventListener("click", (e) => { const tr = e.target.closest("#tablaVehiculos tr[data-placa]"); if (tr) abrirVehiculo(tr.dataset.placa); });
+  document.addEventListener("click", (e) => { if (e.target.closest("[data-seguro]")) return; const tr = e.target.closest("#tablaVehiculos tr[data-placa]"); if (tr) abrirVehiculo(tr.dataset.placa); });
+
+  // ============================================================
+  //  SEGUROS: pestaña, modal y adjuntos
+  // ============================================================
+  function renderSeguros() {
+    $("#msgSeguros").hidden = S.segurosOk;
+    const b = $("#badgeSeguros");
+    const alertas = S.segurosOk ? alertasSeguros() : [];
+    b.textContent = alertas.length; b.hidden = !alertas.length;
+    const filas = [];
+    for (const v of S.vehiculos) for (const [tipo, nom] of TIPOS_SEGURO) {
+      const s = seguroDe(v.placa, tipo), e = estadoSeguro(s);
+      filas.push(`<tr class="clickable" data-seguro="${v.placa}|${tipo}">
+        <td><strong>${v.placa}</strong>${v.activo ? "" : ' <span class="badge inactivo">inactivo</span>'}</td><td>${escapeHtml(v.marca_modelo)}</td><td>${nom}</td>
+        <td>${s ? escapeHtml(s.aseguradora || "—") : '<span class="muted">—</span>'}</td><td>${s ? escapeHtml(s.numero_poliza || "—") : '<span class="muted">—</span>'}</td>
+        <td>${s ? fmtFecha(s.fecha_fin) : '<span class="muted">—</span>'}</td>
+        <td><span class="badge ${e.clase}">${escapeHtml(e.texto)}</span></td>
+        <td>${s && s.archivo_path ? (s.archivo_tipo === "application/pdf" ? "📄" : "📷") : '<span class="muted">—</span>'}</td></tr>`);
+    }
+    $("#tablaSeguros").innerHTML = `<thead><tr><th>Placa</th><th>Vehículo</th><th>Seguro</th><th>Aseguradora</th><th>N° póliza</th><th>Vence</th><th>Estado</th><th>Archivo</th></tr></thead><tbody>` +
+      (filas.length ? filas.join("") : `<tr><td colspan="8" class="muted center">Registra primero los vehículos</td></tr>`) + `</tbody>`;
+  }
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-seguro]"); if (!el) return;
+    e.preventDefault();
+    if (!S.segurosOk) { mostrarTab("seguros"); return; }
+    const [placa, tipo] = el.dataset.seguro.split("|"); abrirSeguro(placa, tipo);
+  });
+
+  async function urlSeguro(path) {
+    if (!path) return null;
+    const { data, error } = await sb.storage.from("seguros").createSignedUrl(path, 3600);
+    if (error) { console.warn(error); return null; }
+    return data.signedUrl;
+  }
+
+  function abrirSeguro(placa, tipo) {
+    const v = vehiculoDe(placa), s = seguroDe(placa, tipo) || {}, e = estadoSeguro(s.id ? s : null);
+    let archivoNuevo = null;
+    const modal = abrirModal(`
+      <div class="modal-head">
+        <div><h2>${nombreSeguro(tipo)} · ${placa}</h2><span class="muted small">${escapeHtml(v.marca_modelo || "")}</span> <span class="badge ${e.clase}" id="segEstado">${escapeHtml(e.texto)}</span></div>
+        <button class="close" data-cerrar aria-label="Cerrar">×</button>
+      </div>
+      <div class="detalle">
+        <div>
+          <div class="foto-box" id="segBox"><span class="muted">${s.archivo_path ? "Cargando archivo…" : "Sin archivo adjunto"}</span></div>
+          <div class="row mt" style="flex-wrap:wrap;gap:.4rem">
+            <a id="segLink" class="btn sm" target="_blank" rel="noopener" hidden>Abrir archivo</a>
+            <label class="btn sm primary" style="cursor:pointer">📎 Adjuntar foto o PDF<input type="file" id="segArchivo" accept="image/*,application/pdf" hidden></label>
+            <span class="muted small" id="segArchivoNombre"></span>
+          </div>
+          <p class="muted small mt">Foto de la carátula o el PDF de la póliza. Máximo 10 MB; las fotos se comprimen automáticamente.</p>
+        </div>
+        <form id="formSeguro">
+          <div class="grid grid-2">
+            <div class="field"><label>Fecha de vencimiento *</label><input name="fecha_fin" type="date" value="${s.fecha_fin || ""}" required></div>
+            <div class="field"><label>Fecha de inicio</label><input name="fecha_inicio" type="date" value="${s.fecha_inicio || ""}"></div>
+            <div class="field"><label>Aseguradora</label><input name="aseguradora" value="${escapeHtml(s.aseguradora || "")}" maxlength="60" placeholder="Ej: Sura, Bolívar, Axa Colpatria"></div>
+            <div class="field"><label>N° póliza</label><input name="numero_poliza" value="${escapeHtml(s.numero_poliza || "")}" maxlength="40"></div>
+            <div class="field"><label>Valor pagado (COP)</label><input name="valor" type="number" min="0" step="1" inputmode="numeric" value="${s.valor ?? ""}"></div>
+            <div class="field" style="grid-column:1/-1"><label>Observaciones</label><input name="observaciones" value="${escapeHtml(s.observaciones || "")}" maxlength="200"></div>
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn primary" id="segGuardar">Guardar</button>
+            ${s.id ? `<button type="button" class="btn ghost" data-accion="eliminar">Eliminar registro</button>` : ""}
+            <button type="button" class="btn" data-cerrar>Cancelar</button>
+          </div>
+        </form>
+      </div>`);
+
+    const form = modal.querySelector("#formSeguro"), box = modal.querySelector("#segBox"), link = modal.querySelector("#segLink");
+    const pintarArchivo = (url, tipoArchivo) => {
+      if (!url) { box.innerHTML = `<span class="muted">No se pudo cargar el archivo</span>`; return; }
+      box.innerHTML = tipoArchivo === "application/pdf" ? `<div class="center" style="padding:1.5rem"><div style="font-size:3rem">📄</div><div class="muted small">Documento PDF</div></div>` : `<img src="${url}" alt="${nombreSeguro(tipo)}">`;
+      link.href = url; link.hidden = false;
+    };
+    if (s.archivo_path) urlSeguro(s.archivo_path).then((u) => pintarArchivo(u, s.archivo_tipo));
+
+    form.fecha_fin.addEventListener("input", () => { const st = estadoSeguro({ fecha_fin: form.fecha_fin.value }); const b = modal.querySelector("#segEstado"); b.className = `badge ${st.clase}`; b.textContent = st.texto; });
+
+    modal.querySelector("#segArchivo").addEventListener("change", async (ev) => {
+      const f = ev.target.files[0]; if (!f) return;
+      try {
+        if (f.type === "application/pdf") { if (f.size > 10 * 1024 * 1024) { toast("El PDF supera 10 MB", "error"); return; } archivoNuevo = { blob: f, tipo: "application/pdf", ext: "pdf" }; }
+        else { const blob = await comprimirImagen(f, 1800, 0.85); archivoNuevo = { blob, tipo: "image/jpeg", ext: "jpg" }; }
+        modal.querySelector("#segArchivoNombre").textContent = `${f.name} · se guarda al pulsar Guardar`;
+        pintarArchivo(URL.createObjectURL(archivoNuevo.blob), archivoNuevo.tipo); link.hidden = true;
+      } catch (err) { toast(mensajeError(err), "error"); }
+    });
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const btn = modal.querySelector("#segGuardar"); btn.disabled = true; btn.textContent = "Guardando…";
+      try {
+        const datos = {
+          placa, tipo, fecha_fin: form.fecha_fin.value, fecha_inicio: form.fecha_inicio.value || null,
+          aseguradora: form.aseguradora.value.trim() || null, numero_poliza: form.numero_poliza.value.trim() || null,
+          valor: form.valor.value ? Number(form.valor.value) : null, observaciones: form.observaciones.value.trim() || null, creado_por: perfil.id,
+        };
+        if (archivoNuevo) {
+          const path = `${placa}/${tipo}-${Date.now()}.${archivoNuevo.ext}`;
+          const { error: eUp } = await sb.storage.from("seguros").upload(path, archivoNuevo.blob, { contentType: archivoNuevo.tipo, upsert: false });
+          if (eUp) throw eUp;
+          datos.archivo_path = path; datos.archivo_tipo = archivoNuevo.tipo;
+        }
+        const { error } = await sb.from("seguros").upsert(datos, { onConflict: "placa,tipo" });
+        if (error) throw error;
+        if (archivoNuevo && s.archivo_path) await sb.storage.from("seguros").remove([s.archivo_path]);
+        toast(`${nombreSeguro(tipo)} de ${placa} guardado`, "success"); cerrarModal(); await cargarTodo();
+      } catch (err) { toast(mensajeError(err), "error"); btn.disabled = false; btn.textContent = "Guardar"; }
+    });
+
+    form.addEventListener("click", async (ev) => {
+      if (!ev.target.closest("[data-accion=eliminar]")) return;
+      if (!confirm(`¿Eliminar el registro de ${nombreSeguro(tipo)} de ${placa} y su archivo?`)) return;
+      const { error } = await sb.from("seguros").delete().eq("id", s.id);
+      if (error) { toast(mensajeError(error), "error"); return; }
+      if (s.archivo_path) await sb.storage.from("seguros").remove([s.archivo_path]);
+      toast("Registro eliminado", "success"); cerrarModal(); await cargarTodo();
+    });
+  }
   $("#btnNuevoVehiculo").addEventListener("click", () => abrirVehiculo(null));
 
   function abrirVehiculo(placa) {
@@ -698,7 +884,7 @@
   // ============================================================
   //  AUDITORÍA (solo lectura)
   // ============================================================
-  const NOMBRE_TABLA = { tanqueos: "Tanqueo", recargas: "Recarga", vehiculos: "Vehículo", perfiles: "Usuario", conductores_autorizados: "Conductor autorizado" };
+  const NOMBRE_TABLA = { tanqueos: "Tanqueo", recargas: "Recarga", vehiculos: "Vehículo", seguros: "Seguro", perfiles: "Usuario", conductores_autorizados: "Conductor autorizado" };
   const NOMBRE_OP = { INSERT: "Creación", UPDATE: "Modificación", DELETE: "Eliminación" };
   const CAMPOS_AUD = ["numero_recibo", "placa", "conductor_id", "fecha_tanqueo", "galones", "valor_galon", "valor_total", "estado", "motivo_rechazo", "kilometraje", "estacion", "fecha", "valor", "medio", "referencia", "descripcion", "nombre", "rol", "activo", "cedula", "telefono", "marca_modelo", "anio", "color", "tipo", "combustible_predeterminado", "observaciones"];
   const valorAud = (k, v) => {
@@ -813,6 +999,7 @@
       cargarTodo();
       if (document.hidden === false) toast("Nuevo movimiento en tanqueos");
     })
+    .on("postgres_changes", { event: "*", schema: "public", table: "seguros" }, () => cargarTodo())
     .subscribe();
 
   await cargarTodo();

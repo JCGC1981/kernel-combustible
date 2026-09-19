@@ -26,6 +26,19 @@ Ejecuta una vez [`supabase/seguridad.sql`](supabase/seguridad.sql) (SQL Editor �
 Recomendaciones adicionales en Supabase: **Authentication → Providers → Email → Minimum password length: 8**;
 y en **Authentication → Rate limits** deja los valores por defecto (protegen contra intentos masivos).
 
+## 🛡️ SOAT y seguro todo riesgo (alerta 30 días antes)
+
+Activación (una sola vez): ejecuta [`supabase/seguros.sql`](supabase/seguros.sql) en **Supabase → SQL Editor → Run**
+(crea la tabla `seguros`, el almacén privado de archivos, la auditoría y el tiempo real).
+
+- Pestaña **Seguros**: cada vehículo con su SOAT y su todo riesgo; toca una fila para registrar
+  aseguradora, N° de póliza, fecha de inicio/vencimiento, valor pagado y **adjuntar la foto o el PDF**
+  de la póliza (privado, enlaces que caducan en 1 hora). También desde **Vehículos** (columna *Seguros*).
+- **Resumen**: aparece un aviso amarillo con los seguros que vencen en **30 días o menos** y rojo con los
+  **vencidos**, más el indicador *Seguros por vencer*. La pestaña Seguros muestra el contador en rojo.
+- Al renovar, actualiza la fecha de vencimiento y adjunta la nueva póliza; el aviso desaparece.
+- El Excel completo incluye la hoja **Seguros** con días restantes y estado. Todo cambio queda en la **Auditoría**.
+
 ## 📊 Exportar a Excel en tiempo real
 
 El panel siempre muestra los datos vivos (se actualiza solo cuando llega un recibo). Desde ahí:
@@ -225,7 +238,8 @@ kernel-combustible/
 ├── sw.js                 Service worker (PWA)
 ├── manifest.webmanifest
 ├── assets/icon-*.png
-└── supabase/schema.sql   Base de datos + seguridad + flota inicial
+├── supabase/schema.sql   Base de datos + seguridad + flota inicial
+└── supabase/seguros.sql  Módulo SOAT / todo riesgo (tabla, archivos, auditoría)
 ```
 
 ## Preguntas frecuentes

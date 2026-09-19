@@ -29,6 +29,7 @@
       <button data-tab="tanqueos">Tanqueos <span id="badgePendientes" class="badge count" hidden></span></button>
       <button data-tab="recargas">Recargas</button>
       <button data-tab="vehiculos">Vehículos</button>
+      <button data-tab="seguros">Seguros <span id="badgeSeguros" class="badge count" hidden></span></button>
       <button data-tab="conductores">Conductores</button>
       <button data-tab="auditoria">Auditoría</button>
     </nav>
@@ -49,6 +50,7 @@
         <span class="muted small" id="ultimaActualizacion"></span>
         <button class="btn sm success" id="btnExcelTodo" title="Descarga un Excel con toda la información actual: resumen, tanqueos, recargas, vehículos y conductores">📊 Exportar todo a Excel</button>
       </div>
+      <div id="alertaSeguros" class="alert warn" hidden></div>
       <div class="kpis" id="kpis"></div>
       <div class="charts">
         <div class="card"><h3>Gasto mensual (últimos 12 meses)</h3><div class="chart-box"><canvas id="chartMeses"></canvas></div></div>
@@ -116,6 +118,17 @@
       </div>
     </section>
 
+    <!-- ================= SEGUROS ================= -->
+    <section id="tab-seguros" class="tab">
+      <div class="card">
+        <div class="card-title">
+          <div><h2>SOAT y seguro todo riesgo</h2><span class="muted small">La app avisa en el Resumen cuando falten 30 días o menos para el vencimiento y marca en rojo lo vencido. Toca una fila para registrar o actualizar la póliza y adjuntar la foto o el PDF.</span></div>
+        </div>
+        <div id="msgSeguros" class="alert info" hidden>Para activar este módulo ejecuta <code>supabase/seguros.sql</code> en Supabase → SQL Editor (una sola vez).</div>
+        <div class="table-wrap"><table id="tablaSeguros"></table></div>
+      </div>
+    </section>
+
     <!-- ================= CONDUCTORES ================= -->
     <section id="tab-conductores" class="tab">
       <div class="card">
@@ -142,7 +155,7 @@
       <div class="card">
         <div class="card-title"><h2>Auditoría</h2><span class="muted small">Últimos 300 movimientos · este historial no puede modificarse ni borrarse</span></div>
         <div class="filters">
-          <div><label>Tabla</label><select id="aTabla"><option value="">Todas</option><option value="tanqueos">Tanqueos</option><option value="recargas">Recargas</option><option value="vehiculos">Vehículos</option><option value="perfiles">Usuarios</option><option value="conductores_autorizados">Conductores autorizados</option></select></div>
+          <div><label>Tabla</label><select id="aTabla"><option value="">Todas</option><option value="tanqueos">Tanqueos</option><option value="recargas">Recargas</option><option value="vehiculos">Vehículos</option><option value="seguros">Seguros</option><option value="perfiles">Usuarios</option><option value="conductores_autorizados">Conductores autorizados</option></select></div>
           <div><label>Operación</label><select id="aOperacion"><option value="">Todas</option><option value="INSERT">Creación</option><option value="UPDATE">Modificación</option><option value="DELETE">Eliminación</option></select></div>
           <div><label>Buscar</label><input type="search" id="aTexto" placeholder="usuario, placa, recibo…"></div>
         </div>
